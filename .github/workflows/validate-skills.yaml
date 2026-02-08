@@ -1,0 +1,58 @@
+name: Validate Skills
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check skill structure
+        run: |
+          errors=0
+          for dir in */; do
+            [[ "$dir" == .* ]] && continue
+            [[ ! -f "${dir}SKILL.md" ]] && continue
+            skill="${dir%/}"
+            echo "Checking $skill..."
+            if ! head -1 "${dir}SKILL.md" | grep -q '^---$'; then
+              echo "::error file=${dir}SKILL.md::Missing YAML frontmatter"
+              errors=$((errors + 1))
+            fi
+            if ! grep -q '^name:' "${dir}SKILL.md"; then
+              echo "::error file=${dir}SKILL.md::Missing 'name' in frontmatter"
+              errors=$((errors + 1))
+            fi
+            if ! grep -q '^description:' "${dir}SKILL.md"; then
+              echo "::error file=${dir}SKILL.md::Missing 'description' in frontmatter"
+              errors=$((errors + 1))
+            fi
+            lines=$(wc -l < "${dir}SKILL.md")
+            if [ "$lines" -gt 500 ]; then
+              echo "::warning file=${dir}SKILL.md::SKILL.md is $lines lines (target: ≤500)"
+            fi
+            for f in "${dir}README.md" "${dir}CHANGELOG.md"; do
+              if [ -f "$f" ]; then
+                echo "::warning file=$f::Unexpected file — SKILL.md is the skill's readme"
+              fi
+            done
+          done
+          if [ "$errors" -gt 0 ]; then
+            echo "Found $errors error(s)"
+            exit 1
+          fi
+          echo "All skills valid ✓"
+
+      - name: List skills
+        run: |
+          echo "## Skills in this repo"
+          for dir in */; do
+            [[ ! -f "${dir}SKILL.md" ]] && continue
+            name=$(grep '^name:' "${dir}SKILL.md" | head -1 | sed 's/name: *//')
+            echo "- $name (${dir%/})"
+          done
