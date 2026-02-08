@@ -1,65 +1,65 @@
 ---
 name: kueue
 description: >
-  Manage Kueue, the Kubernetes-native job queueing system for batch and ML workloads.
-  Use when: (1) Setting up Kueue (install, ClusterQueues, LocalQueues, ResourceFlavors,
-  WorkloadPriorityClasses), (2) Submitting or managing batch workloads through Kueue
-  (Jobs, RayJobs, PyTorchJobs, JobSets), (3) Debugging queueing issues (pending workloads,
-  quota exhaustion, preemption, admission failures), (4) Configuring fair sharing, cohorts,
-  borrowing limits, and preemption policies, (5) Monitoring queue utilization and pending
-  workloads, (6) Integrating Kueue with KubeRay, Kubeflow Training Operator, or JobSet.
+  Manage Kueue, the Kubernetes-native job queueing system for batch, ML, and serving workloads.
+  Use when: (1) Installing and configuring Kueue (Helm, kubectl, feature gates, KueueConfiguration),
+  (2) Setting up ClusterQueues, LocalQueues, ResourceFlavors, and WorkloadPriorityClasses,
+  (3) Submitting or managing workloads (Jobs, JobSets, RayJobs, RayClusters, RayServices,
+  PyTorchJobs, MPIJobs, TFJobs, PaddleJobs, XGBoostJobs, TrainJobs, Deployments, StatefulSets,
+  LeaderWorkerSets, plain Pods, pod groups), (4) Configuring fair sharing (preemption-based and
+  admission-based), cohorts, borrowing/lending limits, and preemption policies, (5) Setting up
+  Topology Aware Scheduling (TAS) for GPU pod placement optimization, (6) Configuring MultiKueue
+  for multi-cluster job dispatching, (7) Using AdmissionChecks and ProvisioningRequests for
+  cluster-autoscaler integration, (8) Debugging queueing issues (pending workloads, quota
+  exhaustion, preemption, admission failures), (9) Monitoring Kueue metrics and visibility API,
+  (10) Elastic workloads, dynamic reclaim, and partial admission.
 ---
 
 # Kueue
 
 Kubernetes-native job queueing system. Manages quotas and decides when workloads should wait, start, or be preempted.
 
-**Docs:** https://kueue.sigs.k8s.io/docs/
-**GitHub:** https://github.com/kubernetes-sigs/kueue
-**Current version:** v0.16.0 (requires Kubernetes ≥ 1.29)
+**Docs:** https://kueue.sigs.k8s.io/docs/  
+**GitHub:** https://github.com/kubernetes-sigs/kueue  
+**Version:** v0.16.0 | **Requires:** Kubernetes ≥ 1.29
 
-## Core Concepts
-
-Kueue has four primary API objects:
+## Core API Objects
 
 | Object | Scope | Purpose |
 |---|---|---|
-| **ResourceFlavor** | Cluster | Maps to node types (GPU models, spot vs on-demand, architectures) |
-| **ClusterQueue** | Cluster | Defines resource quotas per flavor, fair sharing, preemption rules |
-| **LocalQueue** | Namespace | Tenant-facing queue that points to a ClusterQueue |
-| **WorkloadPriorityClass** | Cluster | Priority values for queue ordering (independent of pod priority) |
+| **ResourceFlavor** | Cluster | Maps to node types (GPU models, spot/on-demand, architectures). Optional `topologyName` for TAS. |
+| **ClusterQueue** | Cluster | Defines resource quotas per flavor, fair sharing, preemption, admission checks |
+| **LocalQueue** | Namespace | Tenant-facing queue pointing to a ClusterQueue |
+| **WorkloadPriorityClass** | Cluster | Priority for queue ordering (independent of pod priority) |
+| **Workload** | Namespace | Unit of admission — auto-created for each job |
+| **Topology** | Cluster | Hierarchical node topology for TAS (block → rack → node) |
+| **AdmissionCheck** | Cluster | Gate admission on external signals (provisioning, MultiKueue) |
 
-**Flow:** Job → LocalQueue → ClusterQueue → admission → pods created.
+**Flow:** Job → LocalQueue → ClusterQueue → quota reservation → admission checks → admission → pods created.
 
-Kueue creates a **Workload** object for each job to track admission status.
+## Installation & Operations
 
-## Installation
+See `references/operations.md` for comprehensive deployment, configuration, Helm values, metrics, upgrades, MultiKueue setup, and feature gates.
+
+Quick install:
 
 ```bash
 # kubectl
 kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.16.0/manifests.yaml
-kubectl wait deploy/kueue-controller-manager -nkueue-system --for=condition=available --timeout=5m
 
 # Helm
 helm install kueue oci://registry.k8s.io/kueue/charts/kueue \
   --version=0.16.0 --namespace kueue-system --create-namespace --wait
-
-# Prometheus metrics (optional)
-kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.16.0/prometheus.yaml
 ```
 
 ## Minimal Setup
 
-A single-queue setup for a small cluster:
-
 ```yaml
-# 1. ResourceFlavor (default, no node selectors)
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
   name: default-flavor
 ---
-# 2. ClusterQueue
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
@@ -78,7 +78,6 @@ spec:
       - name: "nvidia.com/gpu"
         nominalQuota: 8
 ---
-# 3. LocalQueue (per namespace)
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: LocalQueue
 metadata:
@@ -90,7 +89,7 @@ spec:
 
 ## Submitting Workloads
 
-Add the `kueue.x-k8s.io/queue-name` label to any supported job type:
+Label any supported job with `kueue.x-k8s.io/queue-name`:
 
 ```yaml
 apiVersion: batch/v1
@@ -99,7 +98,7 @@ metadata:
   name: training-job
   labels:
     kueue.x-k8s.io/queue-name: user-queue
-    kueue.x-k8s.io/priority-class: high-priority  # optional
+    kueue.x-k8s.io/priority-class: high-priority
 spec:
   suspend: true  # Kueue unsuspends on admission
   parallelism: 4
@@ -117,35 +116,337 @@ spec:
       restartPolicy: Never
 ```
 
-**Key:** Set `suspend: true` — Kueue controls when the job starts. For Kubeflow jobs and RayJobs, Kueue handles suspension automatically via the integration.
+### Supported Integrations
 
-### Supported Job Types
+**Batch:** Job, JobSet, RayJob, RayCluster, PyTorchJob, TFJob, MPIJob, PaddleJob, XGBoostJob, TrainJob (Trainer v2), plain Pods, pod groups  
+**Serving:** Deployment, StatefulSet, LeaderWorkerSet, RayService
 
-| Kind | API Group | Notes |
-|---|---|---|
-| Job | batch/v1 | Native support, partial admission available |
-| JobSet | jobset.x-k8s.io | Multi-template jobs |
-| RayJob | ray.io | Via KubeRay operator |
-| RayCluster | ray.io | Via KubeRay operator |
-| PyTorchJob | kubeflow.org | Via Training Operator |
-| PaddleJob | kubeflow.org | Via Training Operator |
-| TFJob | kubeflow.org | Via Training Operator |
-| XGBoostJob | kubeflow.org | Via Training Operator |
-| MPIJob | kubeflow.org | Via Training Operator |
-| Deployment | apps/v1 | For serving workloads |
-| StatefulSet | apps/v1 | For stateful serving |
+Enable integrations in the KueueConfiguration:
 
-## Multi-Tenant Setup with Fair Sharing
+```yaml
+integrations:
+  frameworks:
+  - "batch/job"
+  - "jobset.x-k8s.io/jobset"
+  - "ray.io/rayjob"
+  - "ray.io/raycluster"
+  - "kubeflow.org/pytorchjob"
+  - "kubeflow.org/mpijob"
+  - "pod"
+```
 
-For multi-team GPU clusters, see `references/multi-tenant.md`.
+### Pod Groups (Plain Pods)
 
-## Troubleshooting
+Group multiple pods as a single workload using the group label:
 
-For debugging pending workloads, preemption, and admission failures, see `references/troubleshooting.md`.
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: worker-0
+  labels:
+    kueue.x-k8s.io/queue-name: user-queue
+  annotations:
+    kueue.x-k8s.io/pod-group-name: my-training
+    kueue.x-k8s.io/pod-group-total-count: "4"
+spec:
+  containers:
+  - name: worker
+    image: training:latest
+    resources:
+      requests:
+        nvidia.com/gpu: "1"
+```
+
+## ClusterQueue Configuration
+
+### Resource Groups
+
+Resources in the same group are assigned the same flavor (e.g., GPU + CPU + memory on the same node type):
+
+```yaml
+spec:
+  resourceGroups:
+  - coveredResources: ["cpu", "memory", "nvidia.com/gpu"]
+    flavors:
+    - name: gpu-a100
+      resources:
+      - name: "cpu"
+        nominalQuota: 64
+      - name: "memory"
+        nominalQuota: 512Gi
+      - name: "nvidia.com/gpu"
+        nominalQuota: 8
+        borrowingLimit: 4    # max borrow from cohort
+        lendingLimit: 2      # max lend to cohort
+    - name: gpu-t4           # fallback flavor
+      resources:
+      - name: "cpu"
+        nominalQuota: 32
+      - name: "memory"
+        nominalQuota: 128Gi
+      - name: "nvidia.com/gpu"
+        nominalQuota: 4
+```
+
+Kueue tries flavors in order — A100 first, T4 as fallback.
+
+### Namespace Selector
+
+Restrict which namespaces can submit to a ClusterQueue:
+
+```yaml
+spec:
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: team-a  # single namespace
+  # OR
+  namespaceSelector:
+    matchLabels:
+      research-cohort: ml-team             # custom label on multiple namespaces
+  # OR
+  namespaceSelector: {}                     # all namespaces
+```
+
+### Queueing Strategy
+
+| Strategy | Behavior |
+|---|---|
+| `BestEffortFIFO` (default) | Priority-ordered, but smaller jobs can skip ahead if larger ones don't fit |
+| `StrictFIFO` | Strict ordering — head-of-line blocks even if smaller jobs fit |
+
+### Cohorts and Borrowing
+
+ClusterQueues in the same cohort share unused quota. See `references/multi-tenant.md` for full examples.
+
+- `nominalQuota` — guaranteed resources
+- `borrowingLimit` — max resources this queue can borrow
+- `lendingLimit` — max resources this queue lends out
+
+### Flavor Fungibility
+
+Controls behavior when preferred flavor is full:
+
+```yaml
+spec:
+  flavorFungibility:
+    whenCanBorrow: Borrow       # or TryNextFlavor
+    whenCanPreempt: TryNextFlavor  # or Preempt
+```
+
+### Stop Policy
+
+Pause a ClusterQueue without deleting it:
+
+```yaml
+spec:
+  stopPolicy: HoldAndDrain  # or Hold, None
+```
+
+- `Hold` — stop admitting new workloads, keep admitted ones running
+- `HoldAndDrain` — stop admitting and evict all admitted workloads
+
+## Preemption
+
+Configure in `.spec.preemption`:
+
+```yaml
+spec:
+  preemption:
+    withinClusterQueue: LowerPriority          # Never | LowerPriority | LowerOrNewerEqualPriority
+    reclaimWithinCohort: Any                    # Never | Any | LowerPriority | LowerOrNewerEqualPriority
+    borrowWithinCohort:
+      policy: LowerPriority                    # Never | LowerPriority | LowerOrNewerEqualPriority
+      maxPriorityThreshold: 100                # only preempt workloads at or below this priority
+```
+
+**Preemption order:** Borrowing workloads in cohort → lowest priority → most recently admitted.
+
+### Fair Sharing (Preemption-Based)
+
+Enables DRF-based preemption across cohorts. Enable globally in KueueConfiguration:
+
+```yaml
+fairSharing:
+  enable: true
+  preemptionStrategies:
+  - LessThanOrEqualToFinalShare   # preempt if preemptor share ≤ target share after preemption
+  - LessThanInitialShare          # fallback: preempt if preemptor share < target share before
+```
+
+Per-ClusterQueue weight:
+
+```yaml
+spec:
+  fairSharing:
+    weight: "2"  # this queue counts as half-usage relative to weight-1 queues
+```
+
+Monitor share values: `kubectl get clusterqueue <name> -o jsonpath='{.status.fairSharing.weightedShare}'`
+
+### Admission Fair Sharing (Usage-Based)
+
+Orders workloads by historical LocalQueue resource consumption. Beta in v0.15.
+
+Enable in KueueConfiguration:
+
+```yaml
+admissionFairSharing:
+  usageHalfLifeTime: "168h"
+  usageSamplingInterval: "5m"
+  resourceWeights:
+    cpu: 2.0
+    memory: 1.0
+```
+
+Enable per-ClusterQueue:
+
+```yaml
+spec:
+  admissionScope:
+    admissionMode: UsageBasedAdmissionFairSharing
+```
+
+Per-LocalQueue weight:
+
+```yaml
+spec:
+  fairSharing:
+    weight: "2"
+```
+
+Track usage: `kubectl get lq <name> -o jsonpath='{.status.fairSharing}'`
+
+## Topology Aware Scheduling (TAS)
+
+Optimizes pod placement for network throughput. Beta in v0.14. Critical for distributed training.
+
+### Setup
+
+```yaml
+# 1. Define topology hierarchy
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: Topology
+metadata:
+  name: gpu-topology
+spec:
+  levels:
+  - nodeLabel: "topology.kubernetes.io/zone"       # block level
+  - nodeLabel: "kubernetes.io/hostname"             # node level (required as lowest for hot-swap)
+---
+# 2. Reference from ResourceFlavor
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: tas-gpu
+spec:
+  nodeLabels:
+    node-pool: gpu-nodes
+  topologyName: gpu-topology
+  tolerations:
+  - key: "nvidia.com/gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+```
+
+### User Annotations (PodTemplate level)
+
+- `kueue.x-k8s.io/podset-required-topology: <level>` — all pods MUST be in the same topology domain
+- `kueue.x-k8s.io/podset-preferred-topology: <level>` — best-effort, falls back to wider domains
+- `kueue.x-k8s.io/podset-unconstrained-topology: ""` — TAS capacity accounting, no placement constraint
+- `kueue.x-k8s.io/podset-group-name: <name>` — group multiple PodSets into same domain
+
+Example — 8-GPU training requiring same host:
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: distributed-training
+  labels:
+    kueue.x-k8s.io/queue-name: user-queue
+spec:
+  parallelism: 8
+  completions: 8
+  completionMode: Indexed
+  template:
+    metadata:
+      annotations:
+        kueue.x-k8s.io/podset-required-topology: "kubernetes.io/hostname"
+    spec:
+      containers:
+      - name: trainer
+        image: training:latest
+        resources:
+          requests:
+            nvidia.com/gpu: "1"
+```
+
+**Hot-swap:** When lowest topology level is hostname, TAS supports automatic node replacement on failure without evicting the entire workload. Beta in v0.14.
+
+## AdmissionChecks
+
+External gates that must pass before a workload is admitted.
+
+### ProvisioningRequest (Cluster Autoscaler)
+
+Ensures physical GPU capacity exists before admission. GA in v0.14.
+
+```yaml
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ProvisioningRequestConfig
+metadata:
+  name: gpu-provisioning
+spec:
+  provisioningClassName: check-capacity.autoscaling.x-k8s.io
+  managedResources:
+  - nvidia.com/gpu
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: AdmissionCheck
+metadata:
+  name: gpu-capacity-check
+spec:
+  controllerName: kueue.x-k8s.io/provisioning-request
+  parameters:
+    apiGroup: kueue.x-k8s.io
+    kind: ProvisioningRequestConfig
+    name: gpu-provisioning
+---
+# Reference from ClusterQueue
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: autoscaled-queue
+spec:
+  admissionChecks:
+  - gpu-capacity-check
+  resourceGroups:
+  - coveredResources: ["nvidia.com/gpu", "cpu", "memory"]
+    flavors:
+    - name: gpu-a100
+      resources:
+      - name: "nvidia.com/gpu"
+        nominalQuota: 16
+      - name: "cpu"
+        nominalQuota: 64
+      - name: "memory"
+        nominalQuota: 512Gi
+```
+
+Flow: quota reserved → ProvisioningRequest created → cluster-autoscaler scales nodes → `Provisioned=true` → workload admitted.
+
+Per-flavor admission checks: use `admissionChecksStrategy.admissionChecks[].onFlavors` to scope checks to specific flavors.
+
+## Elastic Workloads
+
+Dynamic scaling without suspension. Alpha in v0.13. Feature gate: `ElasticJobsViaWorkloadSlices: true`. Annotate job with `kueue.x-k8s.io/elastic-job: "true"` — scale up creates a new Workload Slice, scale down updates existing workload.
+
+## Dynamic Reclaim
+
+Admitted workloads release unused quota early via `status.reclaimablePods`. Count can only increase while quota is held.
 
 ## WorkloadPriorityClass
-
-Define queue priority independently from pod scheduling priority:
 
 ```yaml
 apiVersion: kueue.x-k8s.io/v1beta2
@@ -160,34 +461,48 @@ kind: WorkloadPriorityClass
 metadata:
   name: low-priority
 value: 100
-description: "Experimental and dev jobs"
+description: "Experimental jobs"
 ```
 
-Apply to jobs via label: `kueue.x-k8s.io/priority-class: high-priority`
+Apply via label: `kueue.x-k8s.io/priority-class: high-priority`
+
+## Workload Lifecycle
+
+- `spec.active: false` — deactivates workload (evicts if admitted)
+- `spec.maximumExecutionTimeSeconds: N` — auto-evict after N seconds
 
 ## Key kubectl Commands
 
 ```bash
 # List all Kueue objects
-kubectl get clusterqueues
-kubectl get localqueues -A
-kubectl get resourceflavors
-kubectl get workloads -A
-kubectl get workloadpriorityclass
+kubectl get clusterqueues,localqueues,resourceflavors,workloads,workloadpriorityclasses -A
 
-# Check ClusterQueue status and usage
+# ClusterQueue status and usage
 kubectl describe clusterqueue <name>
+kubectl get cq <name> -o jsonpath='{.status.flavorsReservation}'
 
-# Check workload admission status
-kubectl get workload -n <ns> <name> -o yaml
-
-# Find the workload for a job
+# Workload for a job
 JOB_UID=$(kubectl get job -n <ns> <name> -o jsonpath='{.metadata.uid}')
 kubectl get workloads -n <ns> -l "kueue.x-k8s.io/job-uid=$JOB_UID"
 
-# Pending workloads visibility API
+# Pending workloads (visibility API)
 kubectl get --raw "/apis/visibility.kueue.x-k8s.io/v1beta1/clusterqueues/<cq>/pendingworkloads"
 
-# Check Kueue controller logs
-kubectl logs -n kueue-system deploy/kueue-controller-manager
+# Fair sharing status
+kubectl get cq <name> -o jsonpath='{.status.fairSharing}'
+
+# Controller logs
+kubectl logs -n kueue-system deploy/kueue-controller-manager --tail=200
 ```
+
+## Multi-Tenant Setup
+
+For cohorts, borrowing, preemption policies, and ResourceFlavor examples, see `references/multi-tenant.md`.
+
+## Troubleshooting
+
+For debugging pending workloads, admission failures, and preemption, see `references/troubleshooting.md`.
+
+## Operations & Deployment
+
+For installation options, Helm configuration, KueueConfiguration reference, metrics, feature gates, upgrades, and MultiKueue setup, see `references/operations.md`.
