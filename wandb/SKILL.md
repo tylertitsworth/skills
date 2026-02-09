@@ -162,29 +162,7 @@ wandb.log({"report": wandb.Html(html_string)})
 
 ### Custom Charts
 
-```python
-# Line plot with custom axes
-data = [[x, y] for x, y in zip(steps, values)]
-table = wandb.Table(data=data, columns=["step", "value"])
-wandb.log({"custom_chart": wandb.plot.line(table, "step", "value", title="My Chart")})
-
-# Scatter plot
-wandb.log({"scatter": wandb.plot.scatter(table, "x", "y", title="Scatter")})
-
-# Bar chart
-wandb.log({"bars": wandb.plot.bar(table, "label", "value", title="Bars")})
-
-# Confusion matrix
-wandb.log({"conf_mat": wandb.plot.confusion_matrix(
-    y_true=labels, preds=predictions, class_names=class_names
-)})
-
-# PR curve
-wandb.log({"pr_curve": wandb.plot.pr_curve(labels, predictions, class_names)})
-
-# ROC curve
-wandb.log({"roc": wandb.plot.roc_curve(labels, predictions, class_names)})
-```
+Built-in chart functions: `wandb.plot.line()`, `wandb.plot.scatter()`, `wandb.plot.bar()`, `wandb.plot.confusion_matrix()`, `wandb.plot.pr_curve()`, `wandb.plot.roc_curve()`. All take a `wandb.Table` and column names.
 
 ### Alerts
 
