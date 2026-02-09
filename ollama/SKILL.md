@@ -356,3 +356,9 @@ response = client.chat.completions.create(
 | GPU utilization | Moderate | High |
 
 Use Ollama for development, prototyping, and single-user inference. Use vLLM for production serving with high concurrency.
+
+## Cross-References
+
+- [model-formats](../model-formats/) — GGUF format details, quantization types, SafeTensors conversion
+- [vllm](../vllm/) — High-throughput alternative for datacenter inference
+- [openai-api](../openai-api/) — OpenAI-compatible API patterns (Ollama implements the same API)
