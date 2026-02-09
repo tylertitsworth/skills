@@ -9,7 +9,7 @@ description: Flash Attention, SDPA backends, PagedAttention, and attention kerne
 
 | Backend | GPU Arch | Dtypes | Max Head Dim | Use Case |
 |---------|----------|--------|-------------|----------|
-| FlashAttention-2 | Ampere, Ada, Hopper (CUDA); MI200/MI300 (ROCm) | fp16, bf16 | 256 | General training & inference |
+| FlashAttention-2 | Ampere, Ada, Hopper | fp16, bf16 | 256 | General training & inference |
 | FlashAttention-3 | Hopper only (H100/H800) | fp16, bf16, fp8 (fwd only) | 256 | Maximum throughput on H100 |
 | SDPA Math | Any CUDA | fp32, fp16, bf16 | Any | Fallback / debugging |
 | SDPA Efficient (xFormers/Memory-Efficient) | Ampere+ | fp16, bf16 | 128 | When FA unavailable |
@@ -219,23 +219,6 @@ RUN pip install flash-attn --no-build-isolation
 ENV MAX_JOBS=4
 RUN pip install flash-attn --no-build-isolation
 ```
-
-## ROCm Support
-
-FlashAttention-2 on AMD GPUs (MI200, MI250, MI300) supports two backends:
-
-| Backend | Install | GPUs | Notes |
-|---------|---------|------|-------|
-| Composable Kernel (CK) | Default | MI200/MI250/MI300/MI355 | Head dim ≤ 256 |
-| Triton | `FLASH_ATTENTION_TRITON_AMD_ENABLE=TRUE` | MI200/MI300 + RDNA | Adds FP8, paged attention, rotary embeddings |
-
-Triton backend env vars for tuning:
-
-| Variable | Effect |
-|----------|--------|
-| `FLASH_ATTENTION_TRITON_AMD_ENABLE` | Enable Triton backend |
-| `FLASH_ATTENTION_TRITON_AMD_AUTOTUNE` | Enable autotuning (slower first run) |
-| `FLASH_ATTENTION_FWD_TRITON_AMD_CONFIG_JSON` | Override tile config: `{"BLOCK_M":128,"BLOCK_N":64}` |
 
 ## Troubleshooting
 
