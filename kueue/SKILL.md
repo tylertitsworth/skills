@@ -282,8 +282,6 @@ spec:
     weight: "2"  # this queue counts as half-usage relative to weight-1 queues
 ```
 
-Monitor share values: `kubectl get clusterqueue <name> -o jsonpath='{.status.fairSharing.weightedShare}'`
-
 ### Admission Fair Sharing (Usage-Based)
 
 Orders workloads by historical LocalQueue resource consumption. Beta in v0.15.
@@ -465,6 +463,36 @@ description: "Experimental jobs"
 ```
 
 Apply via label: `kueue.x-k8s.io/priority-class: high-priority`
+
+## Feature Compatibility & Gotchas
+
+Not all Kueue features compose freely. Key incompatibilities:
+
+| Feature A | Feature B | Status | Notes |
+|---|---|---|---|
+| Elastic Workloads | TAS | ❌ Incompatible | Elastic workloads do not support Topology Aware Scheduling |
+| Elastic Workloads | MultiKueue | ❌ Incompatible | Elastic workloads cannot be dispatched across clusters |
+| TAS | Pod affinities/anti-affinities | ⚠️ Ignored | TAS overrides kube-scheduler placement; pod affinities are silently ignored |
+| TAS | `podset-required-topology` | ⚠️ May fail | If ClusterAutoscaler cannot provision nodes matching required topology |
+| MultiKueue | Manager as worker | ❌ Unsupported | Manager cluster cannot also be its own worker |
+| Preemption (borrowing) | Fair sharing | ⚠️ Interaction | Preempting ClusterQueue above nominal quota behaves differently with `Classic` vs `Fair` algorithms |
+| All-or-nothing (WaitForPodsReady) | Tight quotas | ⚠️ Deadlock risk | Two large jobs can deadlock if physical capacity < configured quota; use `requeuingStrategy` with backoff |
+| LimitRanges | Workload admission | ⚠️ Inadmissible | If adjusted resource values violate namespace LimitRanges, workload is marked Inadmissible |
+| Zero resource requests | Missing CQ resource | ⚠️ Blocks admission | Requesting "0" of a resource not defined in ClusterQueue blocks the workload |
+
+### Upgrade Gotchas
+
+- **CRD API changes between versions** — major/minor upgrades often change CRD schemas. You must update CRDs before the controller, and **all existing workloads may need to be drained** because old Workload objects may not be compatible with new CRD versions. Always read the release notes.
+- **Feature gate graduation** — alpha features become beta (enabled by default) on upgrade, potentially changing behavior. Check `featureGates` in your KueueConfiguration.
+- **Webhook certificate rotation** — Kueue uses internal cert management by default. If switching to cert-manager mid-life, plan for downtime.
+- **Kubernetes version requirements** — Kueue v0.14+ requires Kubernetes 1.29+. Upgrade K8s first.
+
+### General Gotchas
+
+- **Workload names are generated** — don't rely on workload naming conventions; use labels/ownerReferences to find the workload for a job.
+- **Quota is virtual** — Kueue quotas don't enforce actual resource limits. A ClusterQueue with 100 GPUs will admit 100 GPUs of work even if the cluster only has 80 physical GPUs. Use `WaitForPodsReady` to handle the gap.
+- **Preemption is not instant** — preempted workloads are set to `spec.active: false` (suspension). The owning controller must actually stop the pods. If the controller doesn't support suspension, the workload hangs.
+- **Borrowing requires a cohort** — `borrowingLimit` on a ClusterQueue does nothing without a cohort containing other ClusterQueues with available quota.
 
 ## Workload Lifecycle
 
