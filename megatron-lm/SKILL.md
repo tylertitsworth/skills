@@ -220,6 +220,12 @@ See `references/troubleshooting.md` for:
 - Checkpoint conversion issues
 - Data loading problems
 
+## Cross-References
+
+- [pytorch](../pytorch/) — PyTorch distributed training fundamentals
+- [fsdp](../fsdp/) — Alternative: FSDP for smaller-scale training
+- [verl](../verl/) — RL training using Megatron-LM backend
+
 ## Reference
 
 - [Megatron-LM GitHub](https://github.com/NVIDIA/Megatron-LM)

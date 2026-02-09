@@ -557,3 +557,12 @@ For Ray Serve deployments with zero-downtime upgrades, see `references/rayservic
 ## Troubleshooting
 
 For debugging common KubeRay issues, see `references/troubleshooting.md`.
+
+## Cross-References
+
+- [kueue](../kueue/) — Queue and gang-schedule Ray workloads
+- [ray-core](../ray-core/) — Ray programming model
+- [ray-train](../ray-train/) — Distributed training on Ray clusters
+- [ray-serve](../ray-serve/) — Model serving on Ray clusters
+- [ray-data](../ray-data/) — Data processing on Ray clusters
+

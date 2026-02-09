@@ -685,6 +685,10 @@ response.stream_to_file("output.mp3")
 | Logprobs | ✅ | ✅ | ❌ | Via proxy | ✅ |
 | `seed` | ✅ | ✅ | ✅ | Via proxy | ✅ |
 
+## Cross-References
+
+- [vllm](../vllm/) — vLLM as an OpenAI-compatible backend
+
 ## Reference
 
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)

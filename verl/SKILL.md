@@ -438,6 +438,15 @@ See `references/troubleshooting.md` for:
 - vLLM rollout failures
 - Checkpoint and model merging issues
 
+## Cross-References
+
+- [hydra](../hydra/) — Hydra configuration framework (verl uses OmegaConf/Hydra for config composition)
+- [wandb](../wandb/) — Experiment tracking and monitoring
+- [vllm](../vllm/) — vLLM rollout engine for inference during RL training
+- [fsdp](../fsdp/) — FSDP training backend
+- [megatron-lm](../megatron-lm/) — Megatron-LM training backend for large models
+- [pytorch](../pytorch/) — PyTorch distributed training fundamentals
+
 ## Reference
 
 - [verl docs](https://verl.readthedocs.io/)

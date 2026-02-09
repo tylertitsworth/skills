@@ -310,3 +310,10 @@ ds.write_images("/local/images/", column="image")
 ## Performance and Debugging
 
 For performance tuning, memory management, and troubleshooting, see `references/performance.md`.
+
+## Cross-References
+
+- [ray-core](../ray-core/) — Ray tasks and actors fundamentals
+- [ray-train](../ray-train/) — Data ingestion for distributed training
+- [kuberay](../kuberay/) — Deploy data pipelines on Kubernetes
+

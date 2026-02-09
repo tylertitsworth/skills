@@ -336,6 +336,14 @@ run_config = RunConfig(
 
 For communication errors, OOM, slow data loading, and common training issues, see `references/troubleshooting.md`.
 
+## Cross-References
+
+- [ray-core](../ray-core/) — Ray tasks, actors, and object store fundamentals
+- [ray-data](../ray-data/) — Streaming data pipelines for training
+- [kuberay](../kuberay/) — Deploy training jobs on Kubernetes via RayJob CRD
+- [pytorch](../pytorch/) — PyTorch distributed training concepts
+- [fsdp](../fsdp/) — FSDP for model parallelism within Ray Train
+
 ## Reference
 
 - [Ray Train docs](https://docs.ray.io/en/latest/train/train.html)

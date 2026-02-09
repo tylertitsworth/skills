@@ -595,3 +595,8 @@ For debugging pending workloads, admission failures, and preemption, see `refere
 ## Operations & Deployment
 
 For installation options, Helm configuration, KueueConfiguration reference, metrics, feature gates, upgrades, and MultiKueue setup, see `references/operations.md`.
+
+## Cross-References
+
+- [kuberay](../kuberay/) — Gang scheduling RayJob/RayCluster workloads with Kueue
+

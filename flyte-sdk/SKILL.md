@@ -468,6 +468,11 @@ See `references/troubleshooting.md` for:
 - ImageSpec build failures
 - Checkpoint and caching issues
 
+## Cross-References
+
+- [flyte-deployment](../flyte-deployment/) — Deploy and operate Flyte on Kubernetes
+- [flyte-kuberay](../flyte-kuberay/) — Run Ray workloads as Flyte tasks
+
 ## Reference
 
 - [Flytekit API docs](https://docs.flyte.org/en/latest/api/flytekit/)

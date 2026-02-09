@@ -311,6 +311,12 @@ For structured LLM-as-judge, see [MT-Bench](https://github.com/lm-sys/FastChat/t
 5. **Save raw results** (`log_samples=True`) for debugging unexpected scores
 6. **Match eval to use case** — coding? HumanEval. Reasoning? GSM8K/MATH. General? MMLU.
 
+## Cross-References
+
+- [vllm](../vllm/) — vLLM backend for fast GPU evaluation
+- [openai-api](../openai-api/) — OpenAI-compatible API backends (local-completions, local-chat-completions)
+- [wandb](../wandb/) — Log evaluation results to W&B
+
 ## Reference
 
 - [lm-evaluation-harness GitHub](https://github.com/EleutherAI/lm-evaluation-harness)
