@@ -153,15 +153,31 @@ With GCS FT enabled:
 - State is persisted to Redis
 - Head pod restart recovers cluster state
 
+## GPU Multi-Tenancy
+
+Pods without `nvidia.com/gpu` in resource limits may still see all GPUs on the node (`NVIDIA_VISIBLE_DEVICES` defaults to `all`). Fix:
+
+```yaml
+env:
+- name: NVIDIA_VISIBLE_DEVICES
+  value: void    # hides all GPUs from this pod
+```
+
+Set this on head pods and CPU-only worker groups when running on GPU nodes.
+
 ## Version Compatibility
 
 | KubeRay | Minimum Ray | Notes |
 |---|---|---|
 | v1.5.x | 2.8.0+ | Recommended: 2.52.0+ for auth support |
+| v1.3.0+ | 2.8.0+ | CPU uses requests if limits absent |
 | v1.1.x | 2.8.0+ | |
 | v1.0.0 | 1.10+ | |
 
-**Known issue:** Ray versions 2.11.0–2.37.0 have a bug where the dashboard agent hangs when jobs are created, causing liveness probe failures. Avoid these versions.
+**Known issues:**
+- Ray 2.11.0–2.37.0: dashboard agent hangs when jobs created, causing liveness probe failures. Avoid these versions.
+- KubeRay ≥ 1.1.0 requires `wget` in Ray container image.
+- Only `replicas` field changes are supported at runtime. Other RayCluster field changes may not take effect — recreate the resource.
 
 ## Operator Issues
 
