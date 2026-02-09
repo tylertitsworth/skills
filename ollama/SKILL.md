@@ -1,6 +1,6 @@
 ---
 name: ollama
-description: Ollama local LLM serving — Modelfile configuration, model management, API, and Kubernetes deployment. Use when deploying or configuring Ollama for local LLM inference, creating Modelfiles, managing models, or running Ollama on Kubernetes.
+description: Ollama local LLM serving — Modelfile configuration, CLI, model management, GPU backends (CUDA, Vulkan), API, and runtime tuning. Use when configuring Ollama for LLM inference, creating Modelfiles, managing models, selecting GPU backends, or tuning runtime performance.
 ---
 
 # Ollama
@@ -8,6 +8,82 @@ description: Ollama local LLM serving — Modelfile configuration, model managem
 ## Architecture
 
 Ollama wraps llama.cpp with a model registry, REST API, and runtime management. It pulls GGUF models from the Ollama library or Hugging Face, manages them locally, and serves them via an OpenAI-compatible API on port 11434.
+
+## CLI
+
+### Model Management
+
+```bash
+# Pull models (tag format: name:variant)
+ollama pull llama3.2:3b
+ollama pull qwen2.5:72b-instruct-q4_K_M
+ollama pull nomic-embed-text              # Embedding model
+
+# List local models (name, size, quantization, modified date)
+ollama list
+
+# Show model details — parameters, template, license, system prompt
+ollama show llama3.2:3b
+ollama show llama3.2:3b --modelfile       # Dump as Modelfile
+ollama show llama3.2:3b --parameters      # Just parameters
+ollama show llama3.2:3b --template        # Just chat template
+ollama show llama3.2:3b --license         # Just license
+ollama show llama3.2:3b --system          # Just system prompt
+
+# Running models (loaded in VRAM — shows VRAM usage, processor, expiry)
+ollama ps
+
+# Interactive chat
+ollama run llama3.2:3b
+ollama run llama3.2:3b "What is K8s?"     # Single prompt, non-interactive
+
+# Copy/tag model (for creating variants)
+ollama cp llama3.2:3b my-llama:latest
+
+# Remove model
+ollama rm my-assistant
+
+# Create from Modelfile
+ollama create my-assistant -f Modelfile
+
+# Push to Ollama registry (requires ollama.com account)
+ollama push myuser/my-assistant
+
+# Quantize an existing model
+ollama create my-model-q4 --quantize q4_K_M -f Modelfile
+```
+
+### Server Management
+
+```bash
+# Start server (foreground)
+ollama serve
+
+# Check running server
+ollama ps
+
+# List available commands
+ollama help
+```
+
+### Useful CLI Patterns
+
+```bash
+# Pipe input
+echo "Summarize this" | ollama run llama3.2:3b
+
+# JSON output mode
+ollama run llama3.2:3b "List 3 fruits as JSON" --format json
+
+# Set system prompt inline
+ollama run llama3.2:3b --system "You are a K8s expert"
+
+# Preload model into memory without running
+curl http://localhost:11434/api/generate -d '{"model":"llama3.2:3b","keep_alive":"1h"}'
+
+# Unload model from memory
+curl http://localhost:11434/api/generate -d '{"model":"llama3.2:3b","keep_alive":"0"}'
+```
 
 ## Modelfile
 
@@ -31,7 +107,7 @@ PARAMETER num_ctx 8192
 PARAMETER num_gpu 99
 PARAMETER num_thread 8
 
-# Chat template (Jinja2)
+# Chat template (Go template syntax)
 TEMPLATE """{{ if .System }}<|start_header_id|>system<|end_header_id|>
 {{ .System }}<|eot_id|>{{ end }}{{ if .Prompt }}<|start_header_id|>user<|end_header_id|>
 {{ .Prompt }}<|eot_id|>{{ end }}<|start_header_id|>assistant<|end_header_id|>
@@ -84,67 +160,113 @@ FROM hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M
 FROM hf.co/meta-llama/Llama-3.2-3B-Instruct
 ```
 
-## Model Management
+### Modelfile Instructions Reference
+
+| Instruction | Required | Effect |
+|------------|----------|--------|
+| `FROM` | Yes | Base model (library tag, local GGUF, or HF path) |
+| `PARAMETER` | No | Set generation parameters (see table above) |
+| `TEMPLATE` | No | Override chat template (Go template syntax) |
+| `SYSTEM` | No | Default system prompt |
+| `ADAPTER` | No | LoRA/QLoRA adapter path (GGUF format) |
+| `LICENSE` | No | License text or identifier |
+| `MESSAGE` | No | Pre-seed conversation history (`MESSAGE user "..."`, `MESSAGE assistant "..."`) |
+
+## GPU Backends
+
+### NVIDIA (CUDA)
+
+Default backend for NVIDIA GPUs. Compute capability 5.0+ required (Maxwell and newer). No additional configuration needed — Ollama auto-detects CUDA GPUs.
 
 ```bash
-# Pull models
-ollama pull llama3.2:3b
-ollama pull qwen2.5:72b-instruct-q4_K_M
+# Select specific GPUs
+CUDA_VISIBLE_DEVICES=0,1 ollama serve
 
-# Create from Modelfile
-ollama create my-assistant -f Modelfile
-
-# List local models
-ollama list
-
-# Show model details (parameters, template, license)
-ollama show llama3.2:3b
-
-# Copy/tag model
-ollama cp llama3.2:3b my-llama:latest
-
-# Remove model
-ollama rm my-assistant
-
-# Running models (loaded in memory)
-ollama ps
+# Force CPU only
+CUDA_VISIBLE_DEVICES=-1 ollama serve
 ```
+
+### Vulkan (Experimental)
+
+Vulkan provides GPU acceleration for GPUs without dedicated CUDA/ROCm support — including Intel GPUs and AMD GPUs not covered by ROCm. Available since Ollama 0.12.6.
+
+```bash
+# Enable Vulkan backend
+OLLAMA_VULKAN=1 ollama serve
+
+# Select specific Vulkan GPU(s)
+OLLAMA_VULKAN=1 GGML_VK_VISIBLE_DEVICES=0 ollama serve
+
+# Disable Vulkan GPUs (force other backends)
+GGML_VK_VISIBLE_DEVICES=-1 ollama serve
+```
+
+**Requirements**:
+- Vulkan drivers installed (most Windows GPU drivers include Vulkan; Linux may need `mesa-vulkan-drivers` or vendor-specific packages)
+- For Intel on Linux: install via [Intel GPU docs](https://dgpu-docs.intel.com/driver/client/overview.html)
+
+**VRAM reporting**: Vulkan requires `cap_perfmon` capability or root to expose VRAM data. Without it, Ollama uses approximate model sizes for scheduling:
+
+```bash
+sudo setcap cap_perfmon+ep /usr/local/bin/ollama
+```
+
+**GPU selection env vars by backend**:
+
+| Backend | Variable | Example |
+|---------|----------|---------|
+| NVIDIA (CUDA) | `CUDA_VISIBLE_DEVICES` | `0,1` or UUID |
+| Vulkan | `GGML_VK_VISIBLE_DEVICES` | `0` (numeric ID) |
+
+## Environment Variables
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `OLLAMA_HOST` | `127.0.0.1:11434` | Bind address |
+| `OLLAMA_MODELS` | `~/.ollama/models` | Model storage path |
+| `OLLAMA_NUM_PARALLEL` | `1` | Concurrent request slots per model |
+| `OLLAMA_MAX_LOADED_MODELS` | `1` | Max models in VRAM simultaneously |
+| `OLLAMA_KEEP_ALIVE` | `5m` | Default keep-alive duration |
+| `OLLAMA_MAX_QUEUE` | `512` | Max queued requests |
+| `OLLAMA_FLASH_ATTENTION` | `false` | Enable flash attention |
+| `OLLAMA_KV_CACHE_TYPE` | `f16` | KV cache quantization (`f16`, `q8_0`, `q4_0`) |
+| `OLLAMA_GPU_OVERHEAD` | `0` | Reserve GPU memory (bytes) for other processes |
+| `OLLAMA_CONTEXT_LENGTH` | `2048` | Default context length (overrides model default) |
+| `OLLAMA_LOAD_TIMEOUT` | `5m` | Timeout for model loading |
+| `OLLAMA_NOPRUNE` | `0` | Don't prune old model blobs |
+| `OLLAMA_DEBUG` | `0` | Enable debug logging |
+| `OLLAMA_ORIGINS` | — | Allowed CORS origins |
+| `OLLAMA_VULKAN` | `0` | Enable Vulkan GPU backend (experimental) |
+| `OLLAMA_LLM_LIBRARY` | — | Override llama.cpp backend library selection |
 
 ## API
 
-Ollama serves an OpenAI-compatible API:
-
-### Chat Completions (OpenAI-compatible)
+### OpenAI-Compatible Endpoints
 
 ```
-POST /v1/chat/completions
+POST /v1/chat/completions    — Chat completions
+POST /v1/completions         — Text completions
+POST /v1/embeddings          — Embeddings
+GET  /v1/models              — List models
 ```
 
-```json
-{
-  "model": "llama3.2:3b",
-  "messages": [{"role": "user", "content": "Hello"}],
-  "temperature": 0.7,
-  "stream": true
-}
-```
-
-### Native API
+### Native Ollama API
 
 ```
 POST /api/generate    — Raw text generation
 POST /api/chat        — Chat with message history
-POST /api/embed       — Generate embeddings
-GET  /api/tags        — List models
-POST /api/show        — Model details
-POST /api/pull        — Pull model
-POST /api/push        — Push to registry
+POST /api/embed       — Generate embeddings (single or batch)
+GET  /api/tags        — List local models
+POST /api/show        — Model details (parameters, template, license)
+POST /api/pull        — Pull model from registry
+POST /api/push        — Push model to registry
 DELETE /api/delete    — Delete model
-POST /api/copy        — Copy model
-GET  /api/ps          — Running models
+POST /api/copy        — Copy/tag model
+GET  /api/ps          — Running models (loaded in memory)
+POST /api/create      — Create model from Modelfile
 ```
 
-### Runtime Options (per-request)
+### Runtime Options (per-request overrides)
 
 ```json
 {
@@ -160,171 +282,9 @@ GET  /api/ps          — Running models
 }
 ```
 
-`keep_alive` controls how long a model stays loaded in memory after a request. Set to `"0"` to unload immediately, `"-1"` to keep loaded indefinitely.
+`keep_alive` controls how long a model stays loaded after a request. `"0"` = unload immediately, `"-1"` = keep loaded indefinitely.
 
-## Environment Variables
-
-| Variable | Default | Effect |
-|----------|---------|--------|
-| `OLLAMA_HOST` | `127.0.0.1:11434` | Bind address |
-| `OLLAMA_MODELS` | `~/.ollama/models` | Model storage path |
-| `OLLAMA_NUM_PARALLEL` | `1` | Concurrent request slots per model |
-| `OLLAMA_MAX_LOADED_MODELS` | `1` | Max models in VRAM simultaneously |
-| `OLLAMA_KEEP_ALIVE` | `5m` | Default keep-alive duration |
-| `OLLAMA_MAX_QUEUE` | `512` | Max queued requests |
-| `OLLAMA_FLASH_ATTENTION` | `0` | Enable flash attention (`1`) |
-| `OLLAMA_KV_CACHE_TYPE` | `f16` | KV cache quantization (`f16`, `q8_0`, `q4_0`) |
-| `OLLAMA_GPU_OVERHEAD` | `0` | Reserve GPU memory (bytes) for other processes |
-| `OLLAMA_NOPRUNE` | `0` | Don't prune old model blobs |
-| `OLLAMA_DEBUG` | `0` | Enable debug logging |
-| `OLLAMA_ORIGINS` | — | Allowed CORS origins |
-
-## Kubernetes Deployment
-
-### Deployment with GPU
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: ollama
-  namespace: ollama
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: ollama
-  template:
-    metadata:
-      labels:
-        app: ollama
-    spec:
-      containers:
-        - name: ollama
-          image: ollama/ollama:latest
-          ports:
-            - containerPort: 11434
-              name: http
-          env:
-            - name: OLLAMA_HOST
-              value: "0.0.0.0:11434"
-            - name: OLLAMA_KEEP_ALIVE
-              value: "10m"
-            - name: OLLAMA_NUM_PARALLEL
-              value: "4"
-            - name: OLLAMA_FLASH_ATTENTION
-              value: "1"
-          resources:
-            requests:
-              memory: "8Gi"
-              cpu: "2"
-              nvidia.com/gpu: "1"
-            limits:
-              memory: "16Gi"
-              nvidia.com/gpu: "1"
-          volumeMounts:
-            - name: models
-              mountPath: /root/.ollama
-      volumes:
-        - name: models
-          persistentVolumeClaim:
-            claimName: ollama-models
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ollama
-  namespace: ollama
-spec:
-  type: ClusterIP
-  selector:
-    app: ollama
-  ports:
-    - port: 11434
-      targetPort: http
-      name: http
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: ollama-models
-  namespace: ollama
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 100Gi
-```
-
-### Model Pre-pulling with Init Container
-
-```yaml
-initContainers:
-  - name: pull-models
-    image: ollama/ollama:latest
-    command: ["/bin/sh", "-c"]
-    args:
-      - |
-        ollama serve &
-        sleep 5
-        ollama pull llama3.2:3b
-        ollama pull nomic-embed-text
-        kill %1
-    volumeMounts:
-      - name: models
-        mountPath: /root/.ollama
-```
-
-### Helm Chart
-
-The community Helm chart (`otwld/ollama-helm`) provides a simpler deployment:
-
-```yaml
-# values.yaml
-ollama:
-  gpu:
-    enabled: true
-    type: nvidia
-    number: 1
-  models:
-    pull:
-      - llama3.2:3b
-      - nomic-embed-text
-
-persistentVolume:
-  enabled: true
-  size: 100Gi
-
-resources:
-  requests:
-    memory: 8Gi
-    cpu: 2000m
-  limits:
-    memory: 16Gi
-```
-
-```bash
-helm repo add ollama-helm https://otwld.github.io/ollama-helm/
-helm install ollama ollama-helm/ollama -f values.yaml -n ollama
-```
-
-### Multi-Model Serving
-
-To serve multiple models concurrently, increase `OLLAMA_MAX_LOADED_MODELS` and ensure sufficient VRAM:
-
-```yaml
-env:
-  - name: OLLAMA_MAX_LOADED_MODELS
-    value: "3"
-  - name: OLLAMA_NUM_PARALLEL
-    value: "4"
-  - name: OLLAMA_GPU_OVERHEAD
-    value: "536870912"   # 512MB reserved for system
-```
-
-**Memory estimation**: Each loaded model consumes approximately its GGUF file size in VRAM (plus KV cache overhead per concurrent slot).
-
-## OpenAI SDK Compatibility
+### OpenAI SDK Compatibility
 
 Point any OpenAI SDK client at Ollama:
 
@@ -332,7 +292,7 @@ Point any OpenAI SDK client at Ollama:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://ollama.ollama.svc:11434/v1",
+    base_url="http://localhost:11434/v1",
     api_key="unused",  # Ollama doesn't require auth
 )
 
@@ -342,6 +302,61 @@ response = client.chat.completions.create(
 )
 ```
 
+## Runtime Tuning
+
+### Multi-Model Serving
+
+```bash
+# Load multiple models concurrently
+OLLAMA_MAX_LOADED_MODELS=3 OLLAMA_NUM_PARALLEL=4 ollama serve
+```
+
+**Memory estimation**: Each loaded model consumes approximately its GGUF file size in VRAM, plus KV cache overhead per concurrent slot (`num_ctx × num_parallel × ~2MB` for fp16 KV).
+
+### KV Cache Quantization
+
+Reduce VRAM usage by quantizing the KV cache:
+
+```bash
+OLLAMA_KV_CACHE_TYPE=q8_0 ollama serve   # ~50% KV VRAM reduction
+OLLAMA_KV_CACHE_TYPE=q4_0 ollama serve   # ~75% KV VRAM reduction, some quality loss
+```
+
+### Flash Attention
+
+Enable for faster attention computation and reduced memory:
+
+```bash
+OLLAMA_FLASH_ATTENTION=1 ollama serve
+```
+
+### Context Length
+
+Override the model's default context window:
+
+```bash
+OLLAMA_CONTEXT_LENGTH=32768 ollama serve  # Global default
+```
+
+Or per-request via `options.num_ctx`, or per-model via `PARAMETER num_ctx` in Modelfile.
+
+## Kubernetes Deployment
+
+For K8s deployment, the key configuration points are the env vars above set on the container spec, a PVC for model storage at `/root/.ollama`, and GPU resource requests. A community Helm chart is available:
+
+```bash
+helm repo add ollama-helm https://otwld.github.io/ollama-helm/
+helm install ollama ollama-helm/ollama \
+  --set ollama.gpu.enabled=true \
+  --set ollama.gpu.type=nvidia \
+  --set ollama.gpu.number=1 \
+  --set ollama.models.pull={llama3.2:3b} \
+  --set persistentVolume.enabled=true \
+  -n ollama --create-namespace
+```
+
+For init container model pre-pulling, mount the PVC and run `ollama serve & sleep 5 && ollama pull <model> && kill %1`.
+
 ## Ollama vs vLLM
 
 | Feature | Ollama | vLLM |
@@ -349,11 +364,9 @@ response = client.chat.completions.create(
 | Target | Local/edge inference | Datacenter high-throughput |
 | Quantization | GGUF (Q2–Q8, IQ) | AWQ, GPTQ, FP8 |
 | Batching | Basic (num_parallel) | Continuous batching |
-| Throughput | Lower | Higher |
-| Memory efficiency | Good (quantized) | Better (PagedAttention) |
 | Multi-model | Built-in (hot-swap) | One model per process |
+| GPU backends | CUDA, Vulkan, ROCm, Metal | CUDA, ROCm |
 | Setup complexity | Minimal | Higher |
-| GPU utilization | Moderate | High |
 
 Use Ollama for development, prototyping, and single-user inference. Use vLLM for production serving with high concurrency.
 
