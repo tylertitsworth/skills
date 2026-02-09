@@ -317,6 +317,78 @@ ZeRO-1 style — shards optimizer states across DP ranks:
 
 Reduces per-GPU optimizer memory by `1/DP_size`.
 
+## FP8 Training
+
+H100+ GPUs support FP8 for ~30% speedup:
+
+```bash
+--fp8-format hybrid           # E4M3 forward, E5M2 backward
+--fp8-amax-compute-algo max   # or most_recent
+--fp8-amax-history-len 1024
+--fp8-margin 0                # scaling margin
+```
+
+Requires Transformer Engine (`pip install transformer-engine`).
+
+## Data Preprocessing
+
+Megatron requires pre-tokenized binary datasets:
+
+```bash
+# Preprocess with megatron tools
+python tools/preprocess_data.py \
+  --input raw_data.jsonl \
+  --tokenizer-type HuggingFaceTokenizer \
+  --tokenizer-model meta-llama/Llama-3.1-8B \
+  --output-prefix ./data/my_dataset \
+  --workers 32 \
+  --append-eod
+
+# Produces: my_dataset_text_document.bin + .idx
+# Use in training:
+--data-path ./data/my_dataset_text_document
+```
+
+### Data Blending
+
+```bash
+# Weighted blend of multiple datasets
+--data-path 0.7 dataset1_text_document 0.3 dataset2_text_document
+```
+
+## Megatron Bridge (Checkpoint Conversion)
+
+Convert HuggingFace ↔ Megatron checkpoints:
+
+```bash
+pip install megatron-bridge
+
+# HuggingFace → Megatron
+python -m megatron.bridge.convert \
+  --source-format huggingface \
+  --target-format megatron \
+  --source-path meta-llama/Llama-3.1-8B \
+  --target-path ./megatron_ckpt \
+  --target-tp 4 --target-pp 2
+
+# Megatron → HuggingFace
+python -m megatron.bridge.convert \
+  --source-format megatron \
+  --target-format huggingface \
+  --source-path ./megatron_ckpt \
+  --target-path ./hf_model
+```
+
+## Communication Overlap
+
+Enable overlap of computation and communication for higher throughput:
+
+```bash
+--overlap-grad-reduce              # overlap gradient all-reduce with backward
+--overlap-param-gather             # overlap parameter all-gather with forward
+--tp-comm-overlap                  # overlap TP communication with compute
+```
+
 ## Common Parallelism Configurations
 
 | Model Size | GPUs | TP | PP | DP | Notes |
