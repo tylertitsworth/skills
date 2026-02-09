@@ -494,6 +494,12 @@ See `references/troubleshooting.md` for:
 - Leader election problems
 - Common scaffolding mistakes
 
+## Cross-References
+
+- [kuberay](../kuberay/) — KubeRay operator as a real-world operator pattern
+- [kueue](../kueue/) — Kueue as example of CRD-based job scheduling
+- [flyte-deployment](../flyte-deployment/) — Flyte's operator-based K8s deployment
+
 ## Reference
 
 - [Operator SDK docs](https://sdk.operatorframework.io/)

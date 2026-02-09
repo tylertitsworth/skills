@@ -368,3 +368,5 @@ groups:
 ## Cross-References
 
 - [promql](../promql/) — PromQL for Prometheus metrics (LogQL is based on PromQL)
+- [kuberay](../kuberay/) — Query Ray cluster logs with LogQL
+- [kueue](../kueue/) — Query Kueue controller logs for workload debugging

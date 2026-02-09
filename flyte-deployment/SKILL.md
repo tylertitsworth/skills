@@ -341,4 +341,6 @@ For OAuth2/OIDC, ingress, upgrades, monitoring, scaling FlytePropeller, and trou
 
 - [flyte-sdk](../flyte-sdk/) — Flytekit SDK for authoring workflows
 - [flyte-kuberay](../flyte-kuberay/) — Flyte + KubeRay integration for Ray tasks
+- [kueue](../kueue/) — Queue management for Flyte K8s tasks
+- [operator-sdk](../operator-sdk/) — Operator patterns used by Flyte's K8s deployment
 

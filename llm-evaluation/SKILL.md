@@ -316,6 +316,9 @@ For structured LLM-as-judge, see [MT-Bench](https://github.com/lm-sys/FastChat/t
 - [vllm](../vllm/) — vLLM backend for fast GPU evaluation
 - [openai-api](../openai-api/) — OpenAI-compatible API backends (local-completions, local-chat-completions)
 - [wandb](../wandb/) — Log evaluation results to W&B
+- [huggingface-transformers](../huggingface-transformers/) — HF model loading for hf backend
+- [ollama](../ollama/) — Local inference alternative for evaluation
+- [flyte-sdk](../flyte-sdk/) — Orchestrate evaluation pipelines as Flyte workflows
 
 ## Reference
 

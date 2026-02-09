@@ -413,3 +413,5 @@ Use Ollama for development, prototyping, and single-user inference. Use vLLM for
 - [model-formats](../model-formats/) — GGUF format details, quantization types, SafeTensors conversion
 - [vllm](../vllm/) — High-throughput alternative for datacenter inference
 - [openai-api](../openai-api/) — OpenAI-compatible API patterns (Ollama implements the same API)
+- [llm-evaluation](../llm-evaluation/) — Use Ollama as an evaluation backend
+- [huggingface-transformers](../huggingface-transformers/) — Source models to convert to GGUF for Ollama

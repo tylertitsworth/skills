@@ -472,6 +472,8 @@ See `references/troubleshooting.md` for:
 
 - [flyte-deployment](../flyte-deployment/) — Deploy and operate Flyte on Kubernetes
 - [flyte-kuberay](../flyte-kuberay/) — Run Ray workloads as Flyte tasks
+- [huggingface-transformers](../huggingface-transformers/) — HF models/datasets in Flyte tasks
+- [wandb](../wandb/) — Log experiment metrics from Flyte tasks to W&B
 
 ## Reference
 
