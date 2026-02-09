@@ -2,16 +2,18 @@
 name: wandb
 description: >
   Track ML experiments, version artifacts, and manage models with Weights & Biases (W&B).
-  Use when: (1) Setting up wandb experiment tracking (init, config, logging), (2) Integrating
-  with PyTorch, HuggingFace, Lightning, or Ray Train, (3) Versioning datasets and models with
-  Artifacts, (4) Using the Model Registry for staging and deployment, (5) Running hyperparameter
-  sweeps, (6) Building reports and dashboards, (7) Querying runs programmatically via the API,
-  (8) Self-hosting W&B Server on Kubernetes, (9) Debugging sync failures or offline mode issues.
+  Use when: (1) Setting up wandb experiment tracking (init, config, logging metrics/media),
+  (2) Integrating with PyTorch, HuggingFace, Lightning, or Ray Train,
+  (3) Versioning datasets and models with Artifacts, (4) Using the Model Registry for
+  staging and deployment, (5) Running hyperparameter sweeps (Bayesian, grid, random),
+  (6) Querying runs and exporting data via the Public API,
+  (7) Advanced operations (alerts, custom charts, Tables, reports, run grouping),
+  (8) Debugging tracking issues and run recovery.
 ---
 
 # Weights & Biases (wandb)
 
-W&B is the ML experiment tracking, artifact versioning, and model registry platform. SDK version: **0.18.x+**.
+W&B is the ML experiment tracking, artifact versioning, and model registry platform. Assumes a dedicated W&B deployment with BYOB (Bring Your Own Bucket). SDK version: **0.18.x+**.
 
 ## Setup
 
@@ -24,106 +26,177 @@ env:
     secretKeyRef:
       name: wandb-secret
       key: api-key
+- name: WANDB_BASE_URL
+  value: "https://wandb.example.com"    # your dedicated deployment
 - name: WANDB_PROJECT
   value: "my-project"
 - name: WANDB_ENTITY
   value: "my-team"
-- name: WANDB_BASE_URL          # for self-hosted W&B
-  value: "https://wandb.example.com"
-- name: WANDB_MODE              # "offline" for air-gapped clusters
-  value: "online"
 ```
+
+### Environment Variables Reference
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `WANDB_API_KEY` | Authentication key | required |
+| `WANDB_BASE_URL` | W&B server URL | `https://api.wandb.ai` |
+| `WANDB_PROJECT` | Default project name | `"uncategorized"` |
+| `WANDB_ENTITY` | Team or user entity | User default |
+| `WANDB_RUN_GROUP` | Group related runs | None |
+| `WANDB_JOB_TYPE` | Run type label (train, eval, etc.) | None |
+| `WANDB_TAGS` | Comma-separated tags | None |
+| `WANDB_NOTES` | Run description | None |
+| `WANDB_NAME` | Run display name | Auto-generated |
+| `WANDB_DIR` | Local directory for run files | `./wandb` |
+| `WANDB_SILENT` | Suppress console output | `false` |
+| `WANDB_RESUME` | Resume behavior | `"never"` |
+| `WANDB_LOG_MODEL` | Auto-log model checkpoints | `false` |
+| `WANDB_WATCH` | Auto-log model gradients/parameters | `false` |
+| `WANDB_DISABLED` | Disable wandb entirely | `false` |
 
 ## Experiment Tracking
 
-### Initialize a Run
+### wandb.init() Settings
 
 ```python
 import wandb
 
-with wandb.init(
-    project="llm-finetune",
-    entity="ml-team",           # team or username
-    name="bert-lr-sweep-01",    # human-readable run name
-    tags=["bert", "finetune", "a100"],
-    config={                    # hyperparameters
-        "learning_rate": 2e-5,
+run = wandb.init(
+    project="my-project",
+    entity="my-team",
+    name="llama-8b-sft-lr1e4",
+    group="llama-8b-sft",                # group related runs
+    job_type="train",                     # train, eval, preprocess, etc.
+    tags=["sft", "llama", "8b"],
+    notes="SFT with learning rate 1e-4",
+    config={                              # hyperparameters and settings
+        "model": "meta-llama/Llama-3.1-8B-Instruct",
+        "learning_rate": 1e-4,
         "batch_size": 32,
-        "epochs": 10,
-        "model": "bert-base-uncased",
-        "gpu": "A100",
+        "epochs": 3,
     },
-    job_type="training",        # groups by purpose in UI
-    notes="Testing LR sweep on A100 node",
-) as run:
-    # Training loop
-    for epoch in range(run.config.epochs):
-        train_loss, val_loss, val_acc = train_epoch(model, epoch)
-
-        run.log({
-            "train/loss": train_loss,
-            "val/loss": val_loss,
-            "val/accuracy": val_acc,
-            "epoch": epoch,
-        })
-
-    # Log final metrics
-    run.summary["best_accuracy"] = best_acc
-    run.summary["total_params"] = count_params(model)
+    resume="allow",                       # resume behavior (see below)
+    reinit=True,                          # allow multiple init() in same process
+    save_code=True,                       # save the main script
+    settings=wandb.Settings(
+        start_method="thread",            # thread, fork, forkserver
+    ),
+)
 ```
 
-### Config Management
+### Resume Behavior
+
+| Value | Behavior |
+|---|---|
+| `"never"` (default) | Always create new run |
+| `"allow"` | Resume if run ID exists, else create new |
+| `"must"` | Must resume existing run (error if not found) |
+| `"auto"` | Auto-resume from environment (uses `WANDB_RUN_ID`) |
+
+For crash recovery in training jobs, set `resume="allow"` and provide a deterministic `id`:
 
 ```python
-# Update config after init
-run.config.update({"optimizer": "adamw", "warmup_steps": 500})
-
-# Config from argparse
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument("--lr", type=float, default=1e-4)
-args = parser.parse_args()
-run.config.update(args)
-
-# Config from a YAML/dict file
-run.config.update(yaml.safe_load(open("config.yaml")))
+run = wandb.init(
+    id=f"training-{model_name}-{experiment_id}",  # deterministic ID
+    resume="allow",
+    project="my-project",
+)
 ```
 
-### Logging Options
+### Logging Metrics
 
 ```python
-# Metrics at a step
-run.log({"loss": 0.5, "gpu_mem_gb": 38.2}, step=100)
+# Basic logging
+wandb.log({"train/loss": 0.5, "train/accuracy": 0.85, "epoch": 1})
 
-# Histograms and distributions
-run.log({"gradients": wandb.Histogram(grad_norms)})
+# Step-based logging (explicit step)
+wandb.log({"train/loss": 0.3}, step=100)
 
+# Commit control (batch multiple calls into one step)
+wandb.log({"train/loss": 0.3}, commit=False)
+wandb.log({"train/accuracy": 0.9}, commit=True)  # both logged at same step
+
+# Summary metrics (final values shown in run table)
+wandb.run.summary["best_accuracy"] = 0.95
+wandb.run.summary["best_epoch"] = 7
+
+# Define metric properties (x-axis, summary, goal)
+wandb.define_metric("train/*", step_metric="global_step")
+wandb.define_metric("eval/*", step_metric="epoch")
+wandb.define_metric("eval/accuracy", summary="max", goal="maximize")
+wandb.define_metric("eval/loss", summary="min", goal="minimize")
+```
+
+### define_metric Reference
+
+| Setting | Purpose | Values |
+|---|---|---|
+| `step_metric` | X-axis for this metric | Any logged metric name |
+| `summary` | How to summarize in run table | `"min"`, `"max"`, `"mean"`, `"last"`, `"best"`, `"copy"`, `"none"` |
+| `goal` | Optimization direction | `"minimize"`, `"maximize"` |
+| `hidden` | Hide from default charts | `True`/`False` |
+| `overwrite` | Allow redefining | `True`/`False` |
+
+### Logging Media
+
+```python
 # Images
-run.log({"predictions": [wandb.Image(img, caption=f"pred: {p}") for img, p in preds]})
+wandb.log({"samples": [wandb.Image(img, caption=f"Sample {i}") for i, img in enumerate(images)]})
 
 # Tables (structured data)
-table = wandb.Table(columns=["input", "prediction", "label"])
-for row in eval_results:
-    table.add_data(row["input"], row["pred"], row["label"])
-run.log({"eval_results": table})
+table = wandb.Table(columns=["input", "prediction", "label", "correct"])
+for inp, pred, label in results:
+    table.add_data(inp, pred, label, pred == label)
+wandb.log({"predictions": table})
 
-# Custom charts
-run.log({"pr_curve": wandb.plot.pr_curve(y_true, y_scores, labels=class_names)})
-run.log({"conf_mat": wandb.plot.confusion_matrix(y_true, y_pred, class_names)})
+# Histograms
+wandb.log({"weight_dist": wandb.Histogram(model.fc.weight.data.cpu())})
 
-# System metrics are logged automatically (GPU util, memory, CPU, etc.)
+# Audio
+wandb.log({"audio": wandb.Audio(audio_array, sample_rate=16000)})
+
+# Point clouds, 3D objects, HTML
+wandb.log({"scene": wandb.Object3D(point_cloud)})
+wandb.log({"report": wandb.Html(html_string)})
 ```
 
-### Groups and Job Types
+### Custom Charts
 
 ```python
-# Group related runs (e.g., distributed training workers)
-wandb.init(group="ddp-experiment-1", job_type="train-worker")
+# Line plot with custom axes
+data = [[x, y] for x, y in zip(steps, values)]
+table = wandb.Table(data=data, columns=["step", "value"])
+wandb.log({"custom_chart": wandb.plot.line(table, "step", "value", title="My Chart")})
 
-# Group cross-validation folds
-for fold in range(5):
-    with wandb.init(group="cv-experiment", job_type=f"fold-{fold}") as run:
-        ...
+# Scatter plot
+wandb.log({"scatter": wandb.plot.scatter(table, "x", "y", title="Scatter")})
+
+# Bar chart
+wandb.log({"bars": wandb.plot.bar(table, "label", "value", title="Bars")})
+
+# Confusion matrix
+wandb.log({"conf_mat": wandb.plot.confusion_matrix(
+    y_true=labels, preds=predictions, class_names=class_names
+)})
+
+# PR curve
+wandb.log({"pr_curve": wandb.plot.pr_curve(labels, predictions, class_names)})
+
+# ROC curve
+wandb.log({"roc": wandb.plot.roc_curve(labels, predictions, class_names)})
+```
+
+### Alerts
+
+```python
+# Send alert when metric crosses threshold
+if val_loss > 2.0:
+    wandb.alert(
+        title="Training diverging",
+        text=f"val_loss={val_loss:.4f} exceeded threshold at step {step}",
+        level=wandb.AlertLevel.WARN,  # INFO, WARN, ERROR
+        wait_duration=300,            # don't re-alert for 5 minutes
+    )
 ```
 
 ## Framework Integrations
@@ -131,72 +204,50 @@ for fold in range(5):
 ### PyTorch (Manual)
 
 ```python
-with wandb.init(project="pytorch-training", config=config) as run:
-    # Watch model — logs gradients, parameters
-    run.watch(model, log="all", log_freq=100)
+wandb.watch(model, log="all", log_freq=100)  # log gradients + parameters
 
-    for epoch in range(config["epochs"]):
-        for batch in dataloader:
-            loss = train_step(model, batch)
-            run.log({"train/loss": loss.item()})
+for step, batch in enumerate(dataloader):
+    loss = train_step(model, batch)
+    wandb.log({"train/loss": loss, "global_step": step})
 
-    # Save model checkpoint
-    torch.save(model.state_dict(), "model.pt")
-    artifact = wandb.Artifact("trained-model", type="model")
-    artifact.add_file("model.pt")
-    run.log_artifact(artifact)
+wandb.unwatch(model)
 ```
+
+`wandb.watch()` options:
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `log` | What to log: `"gradients"`, `"parameters"`, `"all"`, `None` | `"gradients"` |
+| `log_freq` | Log every N steps | `1000` |
+| `log_graph` | Log computation graph | `False` |
 
 ### HuggingFace Transformers
 
 ```python
-from transformers import Trainer, TrainingArguments
+from transformers import TrainingArguments
 
 training_args = TrainingArguments(
-    output_dir="./results",
-    report_to="wandb",               # enables W&B integration
-    run_name="hf-bert-finetune",
+    report_to="wandb",
+    run_name="llama-sft",
     logging_steps=10,
-    num_train_epochs=3,
-    per_device_train_batch_size=16,
+    # WANDB_PROJECT, WANDB_ENTITY set via env vars in pod spec
 )
-
-# wandb.init() is called automatically by Trainer
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_ds,
-    eval_dataset=eval_ds,
-)
-trainer.train()
 ```
 
-**Container env vars:**
-```yaml
-- name: WANDB_PROJECT
-  value: "hf-experiments"
-- name: WANDB_LOG_MODEL
-  value: "checkpoint"  # log model checkpoints as artifacts
-```
+Set `WANDB_LOG_MODEL="checkpoint"` to auto-log checkpoints as artifacts, or `"end"` to log only the final model.
 
 ### PyTorch Lightning
 
 ```python
 from lightning.pytorch.loggers import WandbLogger
 
-wandb_logger = WandbLogger(
-    project="lightning-training",
-    name="resnet50-run",
-    log_model="all",  # log checkpoints as artifacts
+logger = WandbLogger(
+    project="my-project",
+    name="my-run",
+    log_model="all",           # log checkpoints as artifacts
+    save_dir="/tmp/wandb",
 )
-
-trainer = L.Trainer(
-    max_epochs=10,
-    logger=wandb_logger,
-    accelerator="gpu",
-    devices=1,
-)
-trainer.fit(model, train_dataloader, val_dataloader)
+trainer = pl.Trainer(logger=logger)
 ```
 
 ### Ray Train
@@ -206,135 +257,158 @@ from ray.train import RunConfig
 from ray.air.integrations.wandb import WandbLoggerCallback
 
 run_config = RunConfig(
-    name="ray-train-experiment",
-    callbacks=[
-        WandbLoggerCallback(
-            project="ray-experiments",
-            api_key_file="~/.wandb_key",  # or set WANDB_API_KEY
-        )
-    ],
+    callbacks=[WandbLoggerCallback(
+        project="my-project",
+        group="ray-experiment",
+        log_config=True,
+    )],
 )
+```
 
-# Use with TorchTrainer, etc.
-trainer = TorchTrainer(
-    train_loop_per_worker=train_func,
-    run_config=run_config,
-    scaling_config=ScalingConfig(num_workers=4, use_gpu=True),
+### lm-evaluation-harness
+
+```python
+import lm_eval
+results = lm_eval.simple_evaluate(
+    model="vllm",
+    model_args="pretrained=my-model",
+    tasks=["mmlu"],
+    wandb_args="project=eval,name=llama-8b-mmlu,job_type=eval",
 )
 ```
 
 ## Artifacts
 
-Version and track datasets, models, and any files:
+Artifacts version datasets, models, and other files with automatic lineage tracking.
 
-### Log an Artifact
+### Artifact Types
+
+| Type | Convention | Use Case |
+|---|---|---|
+| `dataset` | Versioned training/eval data | `my-dataset:v3` |
+| `model` | Model checkpoints | `llama-sft:latest` |
+| `code` | Source code snapshots | `training-code:v1` |
+| Custom string | Any file collection | `configs:v2` |
+
+### Creating and Logging Artifacts
 
 ```python
-with wandb.init(project="my-project", job_type="data-prep") as run:
-    artifact = wandb.Artifact(
-        name="training-dataset",
-        type="dataset",
-        description="Preprocessed training data v2",
-        metadata={"num_samples": 50000, "source": "s3://data/raw"},
-    )
-    # Add files or directories
-    artifact.add_file("data/train.parquet")
-    artifact.add_dir("data/images/")
-    # Or add a reference (pointer, no upload)
-    artifact.add_reference("s3://bucket/large-dataset/")
-
-    run.log_artifact(artifact)
+# Log a model checkpoint
+artifact = wandb.Artifact(
+    name="llama-sft-model",
+    type="model",
+    description="SFT fine-tuned Llama 3.1 8B",
+    metadata={
+        "model": "meta-llama/Llama-3.1-8B-Instruct",
+        "epochs": 3,
+        "eval_loss": 0.42,
+    },
+)
+artifact.add_dir("./checkpoint-best")           # add entire directory
+# or: artifact.add_file("model.safetensors")    # add single file
+# or: artifact.add_reference("s3://bucket/model/")  # reference (no copy)
+wandb.log_artifact(artifact)
 ```
 
-### Use an Artifact
+### Artifact References (BYOB)
+
+With BYOB, artifacts can reference files in your own bucket without copying:
 
 ```python
-with wandb.init(project="my-project", job_type="training") as run:
-    # Download and use
-    artifact = run.use_artifact("training-dataset:latest")
-    data_dir = artifact.download()  # downloads to local cache
+artifact = wandb.Artifact("training-data", type="dataset")
+artifact.add_reference("s3://my-bucket/datasets/openorca/", max_objects=100000)
+wandb.log_artifact(artifact)
 
-    # Or use a specific version
-    artifact = run.use_artifact("training-dataset:v3")
-
-    # Or use by alias
-    artifact = run.use_artifact("training-dataset:best")
+# Later, download (fetches from your bucket)
+artifact = wandb.use_artifact("training-data:latest")
+artifact.download(root="/data/openorca")
 ```
 
-### Model Checkpoints as Artifacts
+### Using Artifacts (Input)
 
 ```python
-with wandb.init(project="training") as run:
-    for epoch in range(epochs):
-        train(model, epoch)
-        # Save checkpoint every N epochs
-        if epoch % 5 == 0:
-            artifact = wandb.Artifact(
-                f"model-checkpoint",
-                type="model",
-                metadata={"epoch": epoch, "val_loss": val_loss},
-            )
-            torch.save(model.state_dict(), "checkpoint.pt")
-            artifact.add_file("checkpoint.pt")
-            run.log_artifact(artifact)  # creates new version automatically
+# Declare dependency and download
+artifact = wandb.use_artifact("my-team/my-project/training-data:v3")
+data_dir = artifact.download(root="/data/training")
+
+# Get metadata without downloading
+artifact = wandb.use_artifact("my-team/my-project/llama-sft-model:latest")
+print(artifact.metadata)  # {"model": "...", "epochs": 3, ...}
+```
+
+### Artifact Aliases
+
+| Alias | Purpose |
+|---|---|
+| `latest` | Most recently logged version |
+| `best` | Custom alias for best-performing version |
+| `production` | Custom alias for deployed version |
+
+```python
+# Set aliases
+artifact.aliases = ["best", "production"]
+artifact.save()
+
+# Or via API
+api = wandb.Api()
+artifact = api.artifact("my-team/my-project/llama-sft-model:v5")
+artifact.aliases.append("production")
+artifact.save()
 ```
 
 ## Model Registry
 
-Promote artifacts to a central registry for team-wide access:
+The Model Registry organizes model artifacts with lifecycle management:
 
 ```python
-with wandb.init(project="training") as run:
-    # Log a model artifact
-    logged_artifact = run.log_artifact(
-        artifact_or_path="./model_weights/",
-        name="llama-finetuned",
-        type="model",
-    )
-
-    # Link to registry collection
-    run.link_artifact(
-        artifact=logged_artifact,
-        target_path="wandb-registry-model/production-models",
-    )
+# Link artifact to registry
+run.link_artifact(
+    artifact,
+    target_path="my-team/model-registry/LLama-3.1-SFT",
+    aliases=["staging"],
+)
 ```
 
-**Download from registry:**
-```python
-with wandb.init() as run:
-    artifact = run.use_artifact(
-        "wandb-registry-model/production-models:latest"
-    )
-    model_dir = artifact.download()
-```
+### Registry Lifecycle
 
-**Aliases for lifecycle management:**
+| Stage | Meaning |
+|---|---|
+| `staging` | Ready for validation |
+| `production` | Deployed/serving |
+| Custom aliases | Any workflow-specific labels |
+
+### Querying the Registry
+
 ```python
-# Promote via API
 api = wandb.Api()
-artifact = api.artifact("my-team/my-project/llama-finetuned:v5")
-artifact.aliases.append("staging")
-artifact.save()
 
-# Later, promote to production
-artifact.aliases.append("production")
-artifact.aliases.remove("staging")
-artifact.save()
+# List all registered models
+collections = api.artifact_type("model", project="model-registry").collections()
+for collection in collections:
+    print(collection.name, collection.aliases)
+
+# Get production model
+model = api.artifact("my-team/model-registry/LLama-3.1-SFT:production")
+model.download(root="/models/production")
 ```
 
 ## Sweeps (Hyperparameter Optimization)
 
-### Define a Sweep
+### Sweep Config
 
 ```python
 sweep_config = {
-    "method": "bayes",  # bayes, grid, random
-    "metric": {"name": "val/accuracy", "goal": "maximize"},
+    "method": "bayes",                    # bayes, grid, random
+    "metric": {"name": "eval/accuracy", "goal": "maximize"},
     "parameters": {
-        "learning_rate": {"min": 1e-6, "max": 1e-3, "distribution": "log_uniform_values"},
+        "learning_rate": {
+            "distribution": "log_uniform_values",
+            "min": 1e-6,
+            "max": 1e-3,
+        },
         "batch_size": {"values": [16, 32, 64]},
-        "epochs": {"value": 10},  # fixed
-        "optimizer": {"values": ["adam", "adamw", "sgd"]},
+        "epochs": {"value": 10},          # fixed parameter
+        "optimizer": {"values": ["adam", "adamw"]},
         "weight_decay": {"min": 0.0, "max": 0.1},
     },
     "early_terminate": {
@@ -345,122 +419,104 @@ sweep_config = {
 }
 ```
 
-### Run a Sweep
+### Sweep Parameter Distributions
+
+| Distribution | Fields | For |
+|---|---|---|
+| `constant` | `value` | Fixed value |
+| `categorical` | `values` (list) | Discrete choices |
+| `uniform` | `min`, `max` | Continuous uniform |
+| `log_uniform_values` | `min`, `max` | Log-uniform (for learning rates) |
+| `normal` | `mu`, `sigma` | Normal distribution |
+| `int_uniform` | `min`, `max` | Integer range |
+| `q_uniform` | `min`, `max`, `q` | Quantized uniform |
+
+### Running Sweeps
 
 ```python
-def train_sweep():
-    with wandb.init() as run:
-        config = run.config
-        model = build_model(config)
-        for epoch in range(config.epochs):
-            loss, acc = train_epoch(model, config)
-            run.log({"val/accuracy": acc, "val/loss": loss})
-
-# Create and run sweep
 sweep_id = wandb.sweep(sweep_config, project="hp-search")
-wandb.agent(sweep_id, function=train_sweep, count=50)  # max 50 runs
+wandb.agent(sweep_id, function=train_func, count=50)
 ```
 
-### Sweep from CLI
+### Sweep Methods
 
-```bash
-# sweep.yaml contains the config
-wandb sweep sweep.yaml
-# Returns: wandb agent my-team/my-project/<sweep-id>
-
-# Run agents (can run on multiple machines/GPUs)
-CUDA_VISIBLE_DEVICES=0 wandb agent my-team/my-project/<sweep-id> &
-CUDA_VISIBLE_DEVICES=1 wandb agent my-team/my-project/<sweep-id> &
-```
+| Method | Description | Best For |
+|---|---|---|
+| `bayes` | Bayesian optimization with Gaussian processes | Small-medium search spaces |
+| `grid` | Exhaustive grid search | Small discrete spaces |
+| `random` | Random sampling | Large spaces, baseline |
 
 ## Public API (Programmatic Access)
 
 ```python
 api = wandb.Api()
 
-# Query runs
-runs = api.runs("my-team/my-project", filters={"tags": "production"})
-for run in runs:
-    print(f"{run.name}: {run.summary.get('val/accuracy', 'N/A')}")
+# Query runs with filters
+runs = api.runs("my-team/my-project", filters={
+    "tags": {"$in": ["production"]},
+    "summary_metrics.eval/accuracy": {"$gt": 0.9},
+    "state": "finished",
+})
 
-# Get a specific run
-run = api.run("my-team/my-project/run-id")
-print(run.config)
-print(run.summary)
-
-# Download run history as DataFrame
-history = run.history()  # pandas DataFrame
-
-# Export metrics for comparison
+# Export to DataFrame
 import pandas as pd
-data = []
-for run in api.runs("my-team/my-project"):
-    data.append({
-        "name": run.name,
-        "lr": run.config.get("learning_rate"),
-        "accuracy": run.summary.get("val/accuracy"),
-    })
+data = [{
+    "name": r.name,
+    "lr": r.config.get("learning_rate"),
+    "accuracy": r.summary.get("eval/accuracy"),
+    "duration": r.summary.get("_wandb", {}).get("runtime"),
+} for r in runs]
 df = pd.DataFrame(data)
 
-# Download artifacts
-artifact = api.artifact("my-team/my-project/model:best")
-artifact.download(root="./downloaded_model")
+# Download run history
+run = api.run("my-team/my-project/run-id")
+history = run.history(samples=1000)       # pandas DataFrame
+system_metrics = run.history(stream="events")  # system metrics (GPU, CPU)
 
-# Delete runs programmatically
-run = api.run("my-team/my-project/old-run-id")
-run.delete()
+# Delete old runs
+for run in api.runs("my-team/my-project", filters={"created_at": {"$lt": "2024-01-01"}}):
+    run.delete()
 ```
 
-## Self-Hosted W&B Server
+### API Filter Operators
 
-For homelab/on-prem deployments using the W&B Kubernetes Operator:
+| Operator | Example |
+|---|---|
+| `$eq` | `{"config.model": {"$eq": "llama"}}` |
+| `$ne` | `{"state": {"$ne": "crashed"}}` |
+| `$gt`, `$gte`, `$lt`, `$lte` | `{"summary_metrics.loss": {"$lt": 0.5}}` |
+| `$in` | `{"tags": {"$in": ["prod"]}}` |
+| `$nin` | `{"tags": {"$nin": ["debug"]}}` |
+| `$regex` | `{"name": {"$regex": "llama.*"}}` |
 
-```bash
-# Add the W&B Helm repo
-helm repo add wandb https://charts.wandb.ai
-helm repo update
+## Run Grouping and Comparison
 
-# Install the operator
-helm install wandb-operator wandb/operator \
-  --namespace wandb --create-namespace
+### Groups
 
-# Create a values file for the W&B instance
-cat <<EOF > wandb-values.yaml
-apiVersion: apps.wandb.com/v1
-kind: WeightsAndBiases
-metadata:
-  name: wandb
-  namespace: wandb
-spec:
-  values:
-    global:
-      host: https://wandb.example.com
-      license: "YOUR_LICENSE_KEY"
-      bucket:
-        provider: s3  # or gcs, az
-        name: wandb-artifacts
-        region: us-east-1
-    ingress:
-      enabled: true
-      class: nginx
-    mysql:
-      host: mysql.wandb.svc
-      database: wandb_local
-      user: wandb
-      password: <secret>
-EOF
+Group related runs (e.g., distributed training workers, experiment variants):
 
-kubectl apply -f wandb-values.yaml
+```python
+wandb.init(group="llama-8b-ablation", job_type="train")
 ```
 
-**Point clients at self-hosted server** — set `WANDB_BASE_URL` env var in pod specs:
+All runs in a group appear together in the UI with aggregated metrics.
+
+### Tags
+
+```python
+# Set at init
+wandb.init(tags=["sft", "llama-8b", "production"])
+
+# Add/remove during run
+wandb.run.tags = wandb.run.tags + ("best-model",)
+```
 
 ## Debugging
 
 See `references/troubleshooting.md` for:
-- Offline mode and sync failures
+- Sync failures and recovery
 - Large artifact handling
-- Rate limiting and network issues
+- Rate limiting
 - Run resume and crash recovery
 - Common integration pitfalls
 
@@ -468,6 +524,6 @@ See `references/troubleshooting.md` for:
 
 - [W&B Documentation](https://docs.wandb.ai/)
 - [wandb GitHub](https://github.com/wandb/wandb)
-- [W&B Helm Charts](https://github.com/wandb/helm-charts)
 - [Python SDK Reference](https://docs.wandb.ai/models/ref/python)
+- [Public API Reference](https://docs.wandb.ai/ref/python/public-api/)
 - `references/troubleshooting.md` — common errors and fixes
