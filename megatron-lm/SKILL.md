@@ -408,7 +408,7 @@ Enable overlap of computation and communication for higher throughput:
 ## Debugging
 
 See `references/troubleshooting.md` for:
-- NCCL and communication errors
+- Communication errors
 - OOM at various scales
 - Pipeline bubble optimization
 - Checkpoint conversion issues

@@ -1,25 +1,8 @@
 # Megatron-LM Troubleshooting
 
-## NCCL and Communication Errors
+## Communication Errors
 
-### "NCCL error: unhandled system error"
-
-```bash
-# Enable debug logging
-export NCCL_DEBUG=INFO
-export NCCL_DEBUG_SUBSYS=ALL
-
-# Specify network interface
-export NCCL_SOCKET_IFNAME=eth0
-
-# Disable InfiniBand if not available
-export NCCL_IB_DISABLE=1
-
-# Increase timeout
-export NCCL_TIMEOUT=600
-```
-
-### "NCCL error: remote process exited"
+### Rank crashed ("remote process exited")
 
 One rank crashed — check all ranks' logs. Common causes:
 1. OOM on one rank
