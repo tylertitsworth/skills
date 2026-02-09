@@ -30,12 +30,15 @@ Skills are loaded dynamically when an agent detects a matching task. The `descri
 | [megatron-lm](megatron-lm/) | Large-scale model training with Megatron-LM |
 | [ray-train](ray-train/) | Distributed training with Ray Train |
 | [verl](verl/) | RLHF/GRPO post-training with verl |
+| [flash-attention](flash-attention/) | Attention backends — FA2/3, SDPA, PagedAttention, Ring Attention |
+| [torch-compile](torch-compile/) | torch.compile modes, backends, graph breaks, and TorchInductor |
 
 ### Inference & Evaluation
 
 | Skill | Description |
 |-------|-------------|
 | [vllm](vllm/) | High-throughput LLM serving with vLLM |
+| [ollama](ollama/) | Lightweight local LLM serving with Modelfile config and K8s deployment |
 | [openai-api](openai-api/) | OpenAI-compatible API integration |
 | [ray-serve](ray-serve/) | Scalable model serving with Ray Serve |
 | [llm-evaluation](llm-evaluation/) | LLM benchmarking with lm-evaluation-harness |
@@ -45,6 +48,7 @@ Skills are loaded dynamically when an agent detects a matching task. The `descri
 | Skill | Description |
 |-------|-------------|
 | [huggingface-transformers](huggingface-transformers/) | HuggingFace model/dataset downloads, loading, and management |
+| [model-formats](model-formats/) | ML model formats — SafeTensors, GGUF, ONNX, pickle, conversion |
 | [ray-data](ray-data/) | Scalable data loading and preprocessing for ML |
 | [ray-core](ray-core/) | Distributed computing primitives with Ray |
 
@@ -54,6 +58,15 @@ Skills are loaded dynamically when an agent detects a matching task. The `descri
 |-------|-------------|
 | [hydra](hydra/) | Meta's configuration framework with OmegaConf |
 | [wandb](wandb/) | Experiment tracking with Weights & Biases |
+| [promql](promql/) | PromQL — Prometheus query language for metrics |
+| [logql](logql/) | LogQL — Loki query language for logs |
+
+### Cloud & Networking (AWS/EKS)
+
+| Skill | Description |
+|-------|-------------|
+| [aws-fsx](aws-fsx/) | FSx for Lustre & NetApp ONTAP storage on EKS |
+| [aws-efa](aws-efa/) | Elastic Fabric Adapter for high-performance distributed training on EKS |
 
 ## Installation
 

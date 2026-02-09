@@ -472,3 +472,10 @@ See `references/troubleshooting.md` for common loading, download, and generation
 - [HF CLI reference](https://huggingface.co/docs/huggingface_hub/en/guides/cli)
 - [Xet storage](https://huggingface.co/docs/hub/en/xet/using-xet-storage)
 - `references/troubleshooting.md` — common errors and fixes
+
+## Cross-References
+
+- [model-formats](../model-formats/) — SafeTensors format details and conversion
+- [flash-attention](../flash-attention/) — attn_implementation parameter and backend selection
+- [vllm](../vllm/) — vLLM inference with HF models
+- [ollama](../ollama/) — Ollama can import SafeTensors models from HF Hub

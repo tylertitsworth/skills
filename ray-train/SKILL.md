@@ -340,6 +340,8 @@ For communication errors, OOM, slow data loading, and common training issues, se
 
 - [ray-core](../ray-core/) — Ray tasks, actors, and object store fundamentals
 - [ray-data](../ray-data/) — Streaming data pipelines for training
+- [aws-efa](../aws-efa/) — EFA networking for multi-node Ray Train on EKS
+- [aws-fsx](../aws-fsx/) — FSx storage for training data and checkpoints
 - [kuberay](../kuberay/) — Deploy training jobs on Kubernetes via RayJob CRD
 - [pytorch](../pytorch/) — PyTorch distributed training concepts
 - [fsdp](../fsdp/) — FSDP for model parallelism within Ray Train

@@ -450,6 +450,9 @@ See `references/troubleshooting.md` for:
 ## Cross-References
 
 - [openai-api](../openai-api/) — OpenAI-compatible API served by vLLM
+- [model-formats](../model-formats/) — SafeTensors, GGUF, and model format details
+- [flash-attention](../flash-attention/) — Attention backends used by vLLM
+- [ollama](../ollama/) — Lightweight alternative for local inference
 - [ray-serve](../ray-serve/) — Deploy vLLM behind Ray Serve for autoscaling
 - [llm-evaluation](../llm-evaluation/) — Use vLLM backend for LLM benchmarking
 - [kuberay](../kuberay/) — Deploy vLLM on Ray clusters via KubeRay

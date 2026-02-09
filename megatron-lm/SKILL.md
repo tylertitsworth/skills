@@ -224,6 +224,8 @@ See `references/troubleshooting.md` for:
 
 - [pytorch](../pytorch/) — PyTorch distributed training fundamentals
 - [fsdp](../fsdp/) — Alternative: FSDP for smaller-scale training
+- [flash-attention](../flash-attention/) — Ring Attention / context parallelism
+- [aws-efa](../aws-efa/) — EFA networking for multi-node Megatron training
 - [verl](../verl/) — RL training using Megatron-LM backend
 
 ## Reference
