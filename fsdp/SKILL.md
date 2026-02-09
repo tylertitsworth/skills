@@ -394,6 +394,8 @@ See `references/troubleshooting.md` for:
 - [pytorch](../pytorch/) — PyTorch distributed training fundamentals
 - [ray-train](../ray-train/) — FSDP integration with Ray Train
 - [megatron-lm](../megatron-lm/) — Alternative: Megatron-LM for very large models
+- [torch-compile](../torch-compile/) — torch.compile + FSDP integration
+- [aws-efa](../aws-efa/) — EFA networking for multi-node FSDP
 
 ## Reference
 

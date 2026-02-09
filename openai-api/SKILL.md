@@ -688,6 +688,7 @@ response.stream_to_file("output.mp3")
 ## Cross-References
 
 - [vllm](../vllm/) — vLLM as an OpenAI-compatible backend
+- [ollama](../ollama/) — Ollama serves an OpenAI-compatible API locally
 
 ## Reference
 

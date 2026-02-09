@@ -599,4 +599,5 @@ For installation options, Helm configuration, KueueConfiguration reference, metr
 ## Cross-References
 
 - [kuberay](../kuberay/) — Gang scheduling RayJob/RayCluster workloads with Kueue
+- [aws-fsx](../aws-fsx/) — FSx storage for queued training jobs
 

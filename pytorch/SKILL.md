@@ -485,6 +485,8 @@ See `references/troubleshooting.md` for:
 - [fsdp](../fsdp/) — FSDP for memory-efficient distributed training
 - [megatron-lm](../megatron-lm/) — Megatron-LM for large-scale training
 - [ray-train](../ray-train/) — Ray Train for managed distributed training
+- [flash-attention](../flash-attention/) — Attention backend selection (FA2, FA3, SDPA)
+- [torch-compile](../torch-compile/) — torch.compile for training and inference optimization
 
 ## Reference
 
