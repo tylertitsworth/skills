@@ -1,107 +1,134 @@
 ---
 name: vllm
 description: >
-  Deploy and configure vLLM for high-throughput LLM inference and serving. Use when:
-  (1) Deploying vLLM as an inference server (Docker, Kubernetes, bare metal), (2) Configuring
-  engine settings (tensor parallelism, quantization, GPU memory, max model length),
-  (3) Using the OpenAI-compatible API (completions, chat, embeddings), (4) Serving with
-  LoRA adapters, speculative decoding, or structured output, (5) Tuning production settings
-  (continuous batching, prefix caching, chunked prefill), (6) Deploying on Kubernetes with
-  autoscaling, (7) Multi-GPU/multi-node inference, (8) Debugging OOM, slow TTFT, or
-  throughput issues.
+  Configure and use vLLM for high-throughput LLM inference. Use when:
+  (1) Configuring vLLM engine settings (tensor parallelism, quantization, GPU memory, context length),
+  (2) Using the OpenAI-compatible API (completions, chat, embeddings),
+  (3) Serving with LoRA adapters, speculative decoding, or structured output,
+  (4) Tuning production settings (continuous batching, prefix caching, chunked prefill),
+  (5) Multi-GPU/multi-node inference, (6) Debugging OOM, slow TTFT, or throughput issues.
+  Assumes the user knows how to run vLLM — focuses on configuration and settings.
 ---
 
 # vLLM
 
 vLLM is a high-throughput LLM inference engine using PagedAttention for optimal GPU memory management. Version: **0.8.x+**.
 
-## Quick Start
+## Engine Configuration
 
-### Bare Metal
+All settings can be passed as Python kwargs to `LLM()` (offline) or `AsyncLLMEngine.from_engine_args()` (server), or as CLI flags to `vllm serve`. This document uses **kwargs** form.
 
-```bash
-pip install vllm
-
-# Start server
-vllm serve meta-llama/Llama-3.1-8B-Instruct \
-  --dtype auto \
-  --api-key token-abc123 \
-  --port 8000
-```
-
-### Python API (Offline Inference)
+### Core Settings
 
 ```python
 from vllm import LLM, SamplingParams
 
-llm = LLM(model="meta-llama/Llama-3.1-8B-Instruct", gpu_memory_utilization=0.9)
-params = SamplingParams(temperature=0.7, top_p=0.9, max_tokens=512)
-
-outputs = llm.generate(["Explain PagedAttention in one paragraph."], params)
-print(outputs[0].outputs[0].text)
+llm = LLM(
+    model="meta-llama/Llama-3.1-70B-Instruct",
+    dtype="bfloat16",                  # auto, float16, bfloat16, float32
+    tensor_parallel_size=4,            # shard across 4 GPUs
+    gpu_memory_utilization=0.90,       # fraction of GPU memory for KV cache
+    max_model_len=8192,                # max context length
+    max_num_seqs=256,                  # max concurrent sequences
+    enable_prefix_caching=True,        # reuse KV cache for shared prefixes
+    enable_chunked_prefill=True,       # overlap prefill and decode
+    trust_remote_code=False,           # allow model custom code
+)
 ```
 
-## Engine Configuration
+### Full Configuration Reference
 
-### Key Server Arguments
+| Kwarg | Purpose | Default |
+|-------|---------|---------|
+| `model` | HuggingFace model ID or local path | required |
+| `dtype` | Weight dtype (`auto`, `float16`, `bfloat16`, `float32`) | `auto` |
+| `tensor_parallel_size` | Number of GPUs for tensor parallelism | `1` |
+| `pipeline_parallel_size` | Number of stages for pipeline parallelism | `1` |
+| `gpu_memory_utilization` | Fraction of GPU memory for KV cache | `0.9` |
+| `max_model_len` | Maximum sequence length | Model's max |
+| `max_num_seqs` | Max concurrent sequences (batch size) | `256` |
+| `max_num_batched_tokens` | Max tokens per scheduler iteration | Auto |
+| `quantization` | Quantization method (`gptq`, `awq`, `fp8`, `bitsandbytes`) | `None` |
+| `enable_prefix_caching` | Automatic prefix caching (APC) | `False` |
+| `enable_chunked_prefill` | Chunked prefill scheduling | `False` |
+| `enforce_eager` | Disable CUDA graphs (for debugging) | `False` |
+| `trust_remote_code` | Allow model custom code | `False` |
+| `served_model_name` | Override model name in API | Model ID |
+| `chat_template` | Jinja2 chat template path | From tokenizer |
+| `seed` | Random seed for reproducibility | `0` |
+| `disable_log_requests` | Reduce logging overhead | `False` |
 
-```bash
-vllm serve meta-llama/Llama-3.1-70B-Instruct \
-  --dtype bfloat16 \
-  --tensor-parallel-size 4 \           # shard across 4 GPUs
-  --gpu-memory-utilization 0.90 \      # % of GPU memory for KV cache
-  --max-model-len 8192 \              # max context length
-  --max-num-seqs 256 \                # max concurrent sequences
-  --enable-prefix-caching \           # reuse KV cache for shared prefixes
-  --enable-chunked-prefill \          # overlap prefill and decode
-  --disable-log-requests \            # reduce logging overhead
-  --api-key $VLLM_API_KEY
+### Scheduler Settings
+
+```python
+llm = LLM(
+    model="...",
+    scheduling_policy="fcfs",          # "fcfs" (default) or "priority"
+    max_num_seqs=256,                  # max concurrent sequences
+    max_num_batched_tokens=32768,      # max tokens per scheduler step
+    num_scheduler_steps=1,             # >1 = multi-step scheduling (amortize overhead)
+    preemption_mode="recompute",       # "recompute" (faster) or "swap" (saves GPU)
+)
 ```
 
-### Configuration Reference
+### KV Cache Settings
 
-| Argument | Purpose | Default |
-|----------|---------|---------|
-| `--model` | HuggingFace model ID or local path | required |
-| `--dtype` | Weight dtype (auto, float16, bfloat16, float32) | `auto` |
-| `--tensor-parallel-size` | Number of GPUs for tensor parallelism | `1` |
-| `--pipeline-parallel-size` | Number of stages for pipeline parallelism | `1` |
-| `--gpu-memory-utilization` | Fraction of GPU memory for KV cache | `0.9` |
-| `--max-model-len` | Maximum sequence length | Model's max |
-| `--max-num-seqs` | Max concurrent sequences (batch size) | `256` |
-| `--max-num-batched-tokens` | Max tokens per iteration | Auto |
-| `--quantization` | Quantization method | None |
-| `--enable-prefix-caching` | Automatic prefix caching (APC) | `false` |
-| `--enable-chunked-prefill` | Chunked prefill scheduling | `false` |
-| `--enforce-eager` | Disable CUDA graphs (debug) | `false` |
-| `--trust-remote-code` | Allow model custom code | `false` |
-| `--served-model-name` | Override model name in API | Model ID |
-| `--chat-template` | Jinja2 chat template path | From tokenizer |
-| `--host` | Bind address | `0.0.0.0` |
-| `--port` | Bind port | `8000` |
+```python
+llm = LLM(
+    model="...",
+    gpu_memory_utilization=0.90,       # fraction of GPU memory for KV cache (after model)
+    kv_cache_dtype="auto",             # "auto", "fp8", "fp8_e5m2", "fp8_e4m3"
+    block_size=16,                     # KV cache block size (16 or 32)
+    swap_space=4,                      # GiB of CPU swap for preempted sequences
+    cpu_offload_gb=0,                  # offload model weights to CPU (reduces GPU usage)
+    num_gpu_blocks_override=None,      # manually set GPU KV blocks (for testing)
+)
+```
+
+### Tokenizer & Chat Settings
+
+```python
+llm = LLM(
+    model="...",
+    tokenizer=None,                    # override tokenizer (different from model)
+    chat_template="/path/template.jinja",  # custom Jinja2 chat template
+    tokenizer_mode="auto",             # "auto" or "slow" (slow = no fast tokenizer)
+    max_logprobs=20,                   # max logprobs returnable per token
+    tokenizer_pool_size=0,             # >0 = async tokenizer workers
+    tokenizer_pool_type="ray",         # "ray" (for distributed tokenizer)
+)
+```
+
+### Model Loading Settings
+
+```python
+llm = LLM(
+    model="...",
+    load_format="auto",                # "auto", "pt", "safetensors", "npcache", "dummy", "bitsandbytes"
+    download_dir=None,                 # custom download directory
+    model_loader_extra_config=None,    # dict of extra config for model loader
+    revision="main",                   # model revision/branch
+    code_revision="main",              # code revision for trust_remote_code models
+    config_format="auto",              # "auto", "hf", or "mistral"
+)
+```
 
 ## Quantization
 
 Reduce memory footprint and increase throughput:
 
-```bash
+```python
 # GPTQ (4-bit, pre-quantized models)
-vllm serve TheBloke/Llama-2-70B-Chat-GPTQ \
-  --quantization gptq \
-  --tensor-parallel-size 2
+llm = LLM(model="TheBloke/Llama-2-70B-Chat-GPTQ", quantization="gptq", tensor_parallel_size=2)
 
 # AWQ (4-bit, fast)
-vllm serve TheBloke/Llama-2-70B-Chat-AWQ \
-  --quantization awq
+llm = LLM(model="TheBloke/Llama-2-70B-Chat-AWQ", quantization="awq")
 
 # FP8 (8-bit, minimal quality loss — A100/H100)
-vllm serve meta-llama/Llama-3.1-70B-Instruct \
-  --quantization fp8
+llm = LLM(model="meta-llama/Llama-3.1-70B-Instruct", quantization="fp8")
 
 # bitsandbytes (dynamic quantization, no pre-quantized model needed)
-vllm serve meta-llama/Llama-3.1-70B-Instruct \
-  --quantization bitsandbytes \
-  --load-format bitsandbytes
+llm = LLM(model="meta-llama/Llama-3.1-70B-Instruct", quantization="bitsandbytes", load_format="bitsandbytes")
 ```
 
 | Method | Bits | Pre-quantized? | Quality | Speed | Best For |
@@ -110,6 +137,29 @@ vllm serve meta-llama/Llama-3.1-70B-Instruct \
 | GPTQ | 4 | Yes | Good | Fast | Memory-constrained |
 | AWQ | 4 | Yes | Good | Fastest 4-bit | Throughput-focused |
 | bitsandbytes | 4/8 | No | Good | Slower | Quick experiments |
+
+## Sampling Parameters
+
+```python
+params = SamplingParams(
+    temperature=0.7,                   # 0.0 = greedy
+    top_p=0.9,
+    top_k=50,                          # -1 = disabled
+    max_tokens=512,
+    min_tokens=0,                      # minimum before stop
+    frequency_penalty=0.0,
+    presence_penalty=0.0,
+    repetition_penalty=1.0,
+    stop=["<|end|>", "\n\n"],          # stop sequences
+    n=1,                               # number of completions
+    best_of=None,                      # sample best_of, return n
+    logprobs=None,                     # number of logprobs per token
+    prompt_logprobs=None,              # logprobs for prompt tokens
+    skip_special_tokens=True,
+    spaces_between_special_tokens=True,
+    seed=None,                         # per-request seed
+)
+```
 
 ## OpenAI-Compatible API
 
@@ -136,7 +186,7 @@ for chunk in response:
         print(chunk.choices[0].delta.content, end="")
 ```
 
-### Completions (Text)
+### Completions (Legacy)
 
 ```python
 response = client.completions.create(
@@ -149,11 +199,8 @@ response = client.completions.create(
 
 ### Embeddings
 
-```bash
-vllm serve BAAI/bge-large-en-v1.5 --task embed
-```
-
 ```python
+# Start server with: LLM(model="BAAI/bge-large-en-v1.5", task="embed")
 response = client.embeddings.create(
     model="BAAI/bge-large-en-v1.5",
     input=["What is vLLM?", "How does PagedAttention work?"],
@@ -164,28 +211,27 @@ response = client.embeddings.create(
 
 ### LoRA Adapters
 
-Serve a base model with dynamically-loaded LoRA adapters:
-
-```bash
-vllm serve meta-llama/Llama-3.1-8B-Instruct \
-  --enable-lora \
-  --lora-modules \
-    code-adapter=./adapters/code-lora \
-    chat-adapter=./adapters/chat-lora \
-  --max-lora-rank 64
-```
-
 ```python
-# Request a specific adapter
+llm = LLM(
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    enable_lora=True,
+    lora_modules={
+        "code-adapter": "./adapters/code-lora",
+        "chat-adapter": "./adapters/chat-lora",
+    },
+    max_lora_rank=64,
+    max_loras=4,                       # max loaded simultaneously
+    lora_extra_vocab_size=256,         # extra vocab for adapter tokens
+)
+
+# Request a specific adapter via API
 response = client.chat.completions.create(
-    model="code-adapter",  # use the LoRA adapter name
+    model="code-adapter",
     messages=[{"role": "user", "content": "Write a Python sort function"}],
 )
 ```
 
 ### Structured Output (Guided Generation)
-
-Force the model to output valid JSON or match a schema:
 
 ```python
 from pydantic import BaseModel
@@ -200,65 +246,57 @@ response = client.chat.completions.create(
     model="meta-llama/Llama-3.1-8B-Instruct",
     messages=[{"role": "user", "content": "Evaluate BERT-base for text classification."}],
     extra_body={
-        "guided_json": ModelEval.model_schema_json(),
-    },
-)
-# Response is guaranteed valid JSON matching the schema
-
-# Or use regex
-response = client.chat.completions.create(
-    model="meta-llama/Llama-3.1-8B-Instruct",
-    messages=[{"role": "user", "content": "Give me an IPv4 address"}],
-    extra_body={
-        "guided_regex": r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",
+        "guided_json": ModelEval.model_json_schema(),
+        # Or: "guided_regex": r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",
+        # Or: "guided_choice": ["positive", "negative", "neutral"],
     },
 )
 
-# Or constrain to choices
-response = client.chat.completions.create(
-    model="meta-llama/Llama-3.1-8B-Instruct",
-    messages=[{"role": "user", "content": "Is this sentiment positive or negative?"}],
-    extra_body={
-        "guided_choice": ["positive", "negative", "neutral"],
-    },
-)
+# Guided decoding backend (engine-level setting)
+llm = LLM(model="...", guided_decoding_backend="outlines")  # or "lm-format-enforcer"
 ```
 
 ### Speculative Decoding
 
-Use a small draft model to speed up generation:
-
-```bash
-vllm serve meta-llama/Llama-3.1-70B-Instruct \
-  --tensor-parallel-size 4 \
-  --speculative-model meta-llama/Llama-3.2-1B-Instruct \
-  --num-speculative-tokens 5
+```python
+llm = LLM(
+    model="meta-llama/Llama-3.1-70B-Instruct",
+    tensor_parallel_size=4,
+    speculative_model="meta-llama/Llama-3.2-1B-Instruct",
+    num_speculative_tokens=5,
+)
 ```
 
 ### Prefix Caching
 
-Reuses KV cache for requests sharing the same prefix (e.g., system prompt):
-
-```bash
-vllm serve meta-llama/Llama-3.1-8B-Instruct \
-  --enable-prefix-caching
+```python
+llm = LLM(model="...", enable_prefix_caching=True)
 ```
 
-Particularly effective for:
-- Shared system prompts across requests
-- RAG with recurring document chunks
-- Multi-turn conversations (prior turns cached)
+Effective for: shared system prompts, RAG with recurring chunks, multi-turn conversations. Incompatible with sliding window attention models.
+
+### Chunked Prefill
+
+```python
+llm = LLM(
+    model="...",
+    enable_chunked_prefill=True,
+    max_num_batched_tokens=2048,       # chunk size; smaller = lower TTFT variance
+)
+```
+
+Reduces head-of-line blocking from long prompts. Essential for mixed-length workloads.
 
 ### Vision / Multimodal Models
 
-```bash
-vllm serve Qwen/Qwen2-VL-7B-Instruct \
-  --max-model-len 8192 \
-  --limit-mm-per-prompt image=4   # max images per request
-```
-
 ```python
-# API usage with images
+llm = LLM(
+    model="Qwen/Qwen2-VL-7B-Instruct",
+    max_model_len=8192,
+    limit_mm_per_prompt={"image": 4},  # max images per request
+)
+
+# API usage
 response = client.chat.completions.create(
     model="Qwen/Qwen2-VL-7B-Instruct",
     messages=[{
@@ -273,122 +311,54 @@ response = client.chat.completions.create(
 
 ### Tool Calling
 
-```bash
-vllm serve meta-llama/Llama-3.1-8B-Instruct \
-  --enable-auto-tool-choice \
-  --tool-call-parser hermes     # or llama3_json, mistral, etc.
+```python
+llm = LLM(
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    enable_auto_tool_choice=True,
+    tool_call_parser="hermes",         # "hermes", "llama3_json", "mistral", etc.
+)
 ```
 
 ### Disaggregated Prefill (v1 Engine)
 
-Separate prefill and decode phases across GPU pools for higher throughput:
-
-```bash
-vllm serve model \
-  --enable-disagg-prefill \
-  --prefill-tp 4 \
-  --decode-tp 4
+```python
+# Separate prefill and decode across GPU pools
+llm = LLM(
+    model="...",
+    enable_disagg_prefill=True,
+    prefill_tp=4,
+    decode_tp=4,
+)
 ```
 
 ## Multi-GPU and Multi-Node
 
 ### Tensor Parallelism (Single Node)
 
-Shard the model across GPUs on one machine:
-
-```bash
-# 4 GPUs on one node
-vllm serve meta-llama/Llama-3.1-70B-Instruct \
-  --tensor-parallel-size 4
+```python
+llm = LLM(model="meta-llama/Llama-3.1-70B-Instruct", tensor_parallel_size=4)
 ```
 
 ### Pipeline Parallelism
 
-Split model layers across stages (useful when TP alone isn't enough):
-
-```bash
-vllm serve meta-llama/Llama-3.1-405B-Instruct \
-  --tensor-parallel-size 4 \
-  --pipeline-parallel-size 2
-# Uses 8 GPUs total (4 TP × 2 PP)
+```python
+# 8 GPUs total (4 TP × 2 PP)
+llm = LLM(
+    model="meta-llama/Llama-3.1-405B-Instruct",
+    tensor_parallel_size=4,
+    pipeline_parallel_size=2,
+)
 ```
 
 ### Multi-Node with Ray
 
-```bash
-# On head node
-ray start --head --port=6379
-
-# On worker nodes
-ray start --address=head-node:6379
-
-# Launch vLLM (auto-detects Ray cluster)
-vllm serve meta-llama/Llama-3.1-405B-Instruct \
-  --tensor-parallel-size 8 \
-  --distributed-executor-backend ray
-```
-
-## Scheduling & Memory Configuration
-
-### Scheduler Settings
-
-```bash
---scheduling-policy fcfs           # fcfs (default) or priority
---max-num-seqs 256                 # max concurrent sequences
---max-num-batched-tokens 32768     # max tokens per scheduler step
---num-scheduler-steps 1            # multi-step scheduling (>1 = amortize overhead)
---preemption-mode recompute        # recompute or swap (recompute is faster, swap saves GPU)
-```
-
-### KV Cache Configuration
-
-```bash
---gpu-memory-utilization 0.90      # fraction of GPU memory for KV cache (after model loaded)
---kv-cache-dtype auto              # auto, fp8, fp8_e5m2, fp8_e4m3
---block-size 16                    # KV cache block size (16 or 32)
---swap-space 4                     # GiB of CPU swap space for preempted sequences
---cpu-offload-gb 0                 # offload model weights to CPU (reduces GPU usage)
---num-gpu-blocks-override N        # manually set GPU KV blocks (for testing)
-```
-
-### Prefix Caching (APC)
-
-```bash
---enable-prefix-caching            # reuse KV cache for shared prompt prefixes
-```
-
-Dramatically improves throughput when many requests share the same system prompt or few-shot examples. Incompatible with sliding window attention models.
-
-### Chunked Prefill
-
-```bash
---enable-chunked-prefill           # split prefill into chunks, interleave with decode
---max-num-batched-tokens 2048      # chunk size; smaller = lower TTFT variance
-```
-
-Reduces head-of-line blocking from long prompts. Essential for mixed-length workloads.
-
-## Tokenizer & Chat Configuration
-
-```bash
---tokenizer <name>                 # override tokenizer (different from model)
---chat-template /path/template.jinja  # custom Jinja2 chat template
---tokenizer-mode auto              # auto or slow (slow = no fast tokenizer)
---max-logprobs 20                  # max logprobs returnable per token
---tokenizer-pool-size 0            # >0 = async tokenizer workers
---tokenizer-pool-type ray          # ray (for distributed tokenizer)
-```
-
-## Model Loading
-
-```bash
---load-format auto                 # auto, pt, safetensors, npcache, dummy, bitsandbytes
---download-dir /path               # custom download directory
---model-loader-extra-config '{}'   # JSON extra config for model loader
---weights-only                     # only load weights (skip architecture)
---revision main                    # model revision/branch
---code-revision main               # code revision for trust_remote_code models
---config-format auto               # auto, hf, or mistral
+```python
+llm = LLM(
+    model="meta-llama/Llama-3.1-405B-Instruct",
+    tensor_parallel_size=8,
+    distributed_executor_backend="ray",
+)
+# Requires Ray cluster running: ray start --head on head node, ray start --address=head:6379 on workers
 ```
 
 ## Environment Variables
@@ -409,48 +379,26 @@ Reduces head-of-line blocking from long prompts. Essential for mixed-length work
 
 | Setting | Throughput ↑ | Latency ↓ |
 |---------|-------------|-----------|
-| `--max-num-seqs` | Increase (512+) | Decrease (32-64) |
-| `--enable-chunked-prefill` | ✅ | Mixed |
-| `--enable-prefix-caching` | ✅ (shared prefixes) | ✅ |
-| `--gpu-memory-utilization` | Increase (0.95) | - |
-| `--max-num-batched-tokens` | Increase | Decrease |
+| `max_num_seqs` | Increase (512+) | Decrease (32-64) |
+| `enable_chunked_prefill` | ✅ | Mixed |
+| `enable_prefix_caching` | ✅ (shared prefixes) | ✅ |
+| `gpu_memory_utilization` | Increase (0.95) | — |
+| `max_num_batched_tokens` | Increase | Decrease |
 | Quantization (FP8/AWQ) | ✅ | ✅ |
-
-### Benchmarking
-
-```bash
-# Built-in benchmark tool
-python -m vllm.entrypoints.openai.api_server &
-
-# Benchmark throughput
-python -m vllm.benchmark_throughput \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --input-len 512 \
-  --output-len 128 \
-  --num-prompts 1000
-
-# Benchmark latency
-python -m vllm.benchmark_latency \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --input-len 512 \
-  --output-len 128 \
-  --batch-size 32
-```
 
 ### Metrics Endpoint
 
 vLLM exposes Prometheus metrics at `/metrics`:
 
 ```
-vllm:num_requests_running     # currently processing
-vllm:num_requests_waiting     # in queue
-vllm:num_requests_swapped     # swapped to CPU
-vllm:gpu_cache_usage_perc     # KV cache utilization
-vllm:cpu_cache_usage_perc
+vllm:num_requests_running            # currently processing
+vllm:num_requests_waiting            # in queue
+vllm:num_requests_swapped            # swapped to CPU
+vllm:gpu_cache_usage_perc            # KV cache utilization
 vllm:avg_prompt_throughput_toks_per_s
 vllm:avg_generation_throughput_toks_per_s
-vllm:time_to_first_token_seconds  # TTFT histogram
-vllm:time_per_output_token_seconds  # TPOT histogram
+vllm:time_to_first_token_seconds     # TTFT histogram
+vllm:time_per_output_token_seconds   # TPOT histogram
 ```
 
 ## Debugging
@@ -459,12 +407,13 @@ See `references/troubleshooting.md` for:
 - GPU OOM during model loading or inference
 - Slow time-to-first-token (TTFT)
 - Throughput degradation under load
-- Model loading failures
-- NCCL errors in multi-GPU setups
+- Model loading failures and NCCL errors
+- LoRA, structured output, speculative decoding, and multimodal issues
 
 ## Reference
 
 - [vLLM docs](https://docs.vllm.ai/)
 - [vLLM GitHub](https://github.com/vllm-project/vllm)
 - [Supported models](https://docs.vllm.ai/en/latest/models/supported_models/)
+- [Engine arguments reference](https://docs.vllm.ai/en/latest/serving/engine_args.html)
 - `references/troubleshooting.md` — common errors and fixes
