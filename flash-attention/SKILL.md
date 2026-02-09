@@ -250,3 +250,10 @@ Flash Attention is O(N) memory in sequence length (vs O(N²) for vanilla attenti
 - [vllm](../vllm/) — vLLM inference engine (uses PagedAttention internally)
 - [huggingface-transformers](../huggingface-transformers/) — `attn_implementation` parameter for model loading
 - [torch-compile](../torch-compile/) — Compiling attention kernels with `torch.compile`
+
+## Reference
+
+- [FlashAttention-2 GitHub](https://github.com/Dao-AILab/flash-attention)
+- [FlashAttention-3 GitHub](https://github.com/Dao-AILab/flash-attention/tree/main/hopper)
+- [PyTorch SDPA docs](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)
+- [FlexAttention blog](https://pytorch.org/blog/flexattention/)

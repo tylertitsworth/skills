@@ -275,3 +275,10 @@ optimization {
 - [huggingface-transformers](../huggingface-transformers/) — SafeTensors as primary format on HF Hub
 - [ollama](../ollama/) — GGUF model loading and Modelfile configuration
 - [flash-attention](../flash-attention/) — Attention backends used after model loading
+
+## Reference
+
+- [SafeTensors GitHub](https://github.com/huggingface/safetensors)
+- [GGUF spec](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md)
+- [ONNX spec](https://onnx.ai/onnx/intro/)
+- [HuggingFace Optimum](https://huggingface.co/docs/optimum/)

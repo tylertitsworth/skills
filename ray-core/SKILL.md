@@ -354,3 +354,16 @@ ctx.get_runtime_env()
 ## Patterns and Anti-Patterns
 
 For distributed computing patterns and common anti-patterns, see `references/patterns.md`.
+
+## Cross-References
+
+- [kuberay](../kuberay/) — Deploy Ray clusters on Kubernetes
+- [ray-data](../ray-data/) — Data processing with Ray datasets
+- [ray-train](../ray-train/) — Distributed training with Ray Train
+- [ray-serve](../ray-serve/) — Model serving with Ray Serve
+
+## Reference
+
+- [Ray Core docs](https://docs.ray.io/en/latest/ray-core/walkthrough.html)
+- [Ray API reference](https://docs.ray.io/en/latest/ray-core/api/doc/ray.init.html)
+- `references/patterns.md` — distributed computing patterns and anti-patterns

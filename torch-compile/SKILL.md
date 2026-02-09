@@ -272,3 +272,10 @@ torch.use_deterministic_algorithms(True)
 - [fsdp](../fsdp/) — FSDP + torch.compile integration ordering
 - [flash-attention](../flash-attention/) — Attention backends that torch.compile can fuse
 - [vllm](../vllm/) — vLLM uses torch.compile internally for inference optimization
+
+## Reference
+
+- [torch.compile tutorial](https://pytorch.org/tutorials/intermediate/torch_compile_tutorial.html)
+- [TorchDynamo deep dive](https://pytorch.org/docs/stable/torch.compiler_deepdive.html)
+- [TorchInductor docs](https://pytorch.org/docs/stable/torch.compiler_inductor_profiling.html)
+- [Troubleshooting guide](https://pytorch.org/docs/stable/torch.compiler_troubleshooting.html)

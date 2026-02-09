@@ -371,13 +371,30 @@ Beyond PPO and GRPO, verl supports:
 
 | Algorithm | Config Key | Description |
 |---|---|---|
-| DAPO | `algorithm.adv_estimator=grpo` + DAPO recipe | Decoupled clip + dynamic sampling |
+| DAPO | `algorithm.adv_estimator=grpo` + DAPO config | Decoupled clip + dynamic sampling |
 | SPIN | Recipe | Self-Play Fine-Tuning |
 | SPPO | Recipe | Self-Play Preference Optimization |
 | OPO | Recipe | On-Policy RL with Optimal Reward Baseline |
 | GPG | Recipe | Group Policy Gradient |
 
 See [verl recipes](https://github.com/verl-project/verl-recipe) for full implementations.
+
+### DAPO Configuration
+
+DAPO uses separated clip epsilons (asymmetric clipping) and dynamic sampling for SOTA reasoning:
+
+```yaml
+actor_rollout_ref:
+  actor:
+    clip_ratio_low: 0.2     # ε_low for lower bound clipping
+    clip_ratio_high: 0.28   # ε_high for upper bound clipping (higher = more exploration)
+```
+
+The asymmetric clip prevents overly conservative updates while maintaining stability. DAPO on Qwen2.5-32B achieves 50% on AIME 2024.
+
+### Online DPO
+
+Extend verl's PPO infrastructure for online DPO — generate N responses per prompt, score them, form pairwise preferences, then train with DPO loss using a reference policy. See `docs/advance/dpo_extension.md` in the verl repo.
 
 ## LoRA Training
 

@@ -419,3 +419,13 @@ groups:
 ## Cross-References
 
 - [logql](../logql/) — LogQL for Loki log queries (PromQL-inspired syntax)
+- [vllm](../vllm/) — vLLM exposes Prometheus metrics (gpu_cache_usage, TTFT histograms)
+- [kuberay](../kuberay/) — Ray cluster metrics exposed via Prometheus
+- [kueue](../kueue/) — Kueue queue/workload metrics for monitoring
+
+## Reference
+
+- [PromQL docs](https://prometheus.io/docs/prometheus/latest/querying/basics/)
+- [PromQL operators](https://prometheus.io/docs/prometheus/latest/querying/operators/)
+- [PromQL functions](https://prometheus.io/docs/prometheus/latest/querying/functions/)
+- [Recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)

@@ -498,6 +498,14 @@ See `references/troubleshooting.md` for:
 - Run resume and crash recovery
 - Common integration pitfalls
 
+## Cross-References
+
+- [pytorch](../pytorch/) — PyTorch training loops with W&B logging
+- [ray-train](../ray-train/) — Ray Train experiment tracking integration
+- [huggingface-transformers](../huggingface-transformers/) — HF Trainer with W&B callback
+- [hydra](../hydra/) — Hydra config management for experiment parameters
+- [llm-evaluation](../llm-evaluation/) — Log evaluation results to W&B
+
 ## Reference
 
 - [W&B Documentation](https://docs.wandb.ai/)

@@ -566,3 +566,11 @@ For debugging common KubeRay issues, see `references/troubleshooting.md`.
 - [ray-serve](../ray-serve/) — Model serving on Ray clusters
 - [ray-data](../ray-data/) — Data processing on Ray clusters
 
+## Reference
+
+- [KubeRay docs](https://docs.ray.io/en/latest/cluster/kubernetes/index.html)
+- [KubeRay GitHub](https://github.com/ray-project/kuberay)
+- [RayJob docs](https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/rayjob-quick-start.html)
+- `references/rayjob.md` — RayJob submitter deep dive
+- `references/troubleshooting.md` — common KubeRay issues
+

@@ -493,3 +493,10 @@ For `--multirun`: `hydra.sweep.dir=/custom/sweep/path`.
 - [Defaults List](https://hydra.cc/docs/advanced/defaults_list/)
 - [Compose API](https://hydra.cc/docs/advanced/compose_api/)
 - `references/omegaconf.md` — OmegaConf resolvers, interpolation, MISSING, operations
+
+## Cross-References
+
+- [pytorch](../pytorch/) — PyTorch training config managed by Hydra
+- [ray-train](../ray-train/) — Ray Train experiment config patterns
+- [wandb](../wandb/) — Log Hydra config to W&B for experiment tracking
+- [verl](../verl/) — verl uses YAML config (similar patterns to Hydra)
