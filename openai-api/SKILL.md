@@ -441,6 +441,67 @@ def count_chat_tokens(messages, model="gpt-4o"):
 - Truncate oldest messages (keep system prompt) when approaching the limit
 - Use `max_tokens` to reserve space for the response
 
+## Vision (Image Inputs)
+
+```python
+response = client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "What's in this image?"},
+            {"type": "image_url", "image_url": {
+                "url": "https://example.com/image.jpg",
+                "detail": "high",  # low | high | auto
+            }},
+        ],
+    }],
+    max_tokens=300,
+)
+```
+
+Also supports base64: `{"url": f"data:image/png;base64,{b64_data}"}`
+
+## Batch API
+
+Process large request batches asynchronously (50% cheaper):
+
+```python
+import json
+
+# 1. Create JSONL file
+requests = [
+    {"custom_id": f"req-{i}", "method": "POST", "url": "/v1/chat/completions",
+     "body": {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": f"Question {i}"}]}}
+    for i in range(1000)
+]
+with open("batch_input.jsonl", "w") as f:
+    for r in requests:
+        f.write(json.dumps(r) + "\n")
+
+# 2. Upload and create batch
+batch_file = client.files.create(file=open("batch_input.jsonl", "rb"), purpose="batch")
+batch = client.batches.create(input_file_id=batch_file.id, endpoint="/v1/chat/completions", completion_window="24h")
+
+# 3. Poll status
+status = client.batches.retrieve(batch.id)
+# When status.status == "completed":
+result_file = client.files.content(status.output_file_id)
+```
+
+## Audio (Whisper + TTS)
+
+```python
+# Speech-to-text
+transcription = client.audio.transcriptions.create(
+    model="whisper-1", file=open("audio.mp3", "rb"), language="en"
+)
+
+# Text-to-speech
+response = client.audio.speech.create(model="tts-1", voice="alloy", input="Hello world")
+response.stream_to_file("output.mp3")
+```
+
 ## Backend Compatibility
 
 | Feature | OpenAI | vLLM | Ollama | LiteLLM | llama.cpp |
