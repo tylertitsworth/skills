@@ -201,9 +201,81 @@ ray_trainer = TorchTrainer(
 result = ray_trainer.fit()
 ```
 
-## DeepSpeed / FSDP
+## DeepSpeed Integration
 
-For large model training with model parallelism, see `references/large-model-training.md`.
+```python
+import deepspeed
+from ray.train.torch import TorchTrainer
+
+def train_func(config):
+    model = build_model()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+
+    # DeepSpeed config
+    ds_config = {
+        "train_batch_size": 64 * ray.train.get_context().get_world_size(),
+        "fp16": {"enabled": True},
+        "zero_optimization": {
+            "stage": 2,                     # ZeRO Stage 2
+            "offload_optimizer": {"device": "cpu"},
+        },
+        "gradient_accumulation_steps": 4,
+    }
+
+    model, optimizer, _, _ = deepspeed.initialize(
+        model=model,
+        optimizer=optimizer,
+        config=ds_config,
+    )
+
+    for batch in train_loader:
+        loss = model(batch)
+        model.backward(loss)
+        model.step()
+
+trainer = TorchTrainer(
+    train_func,
+    train_loop_config={"lr": 1e-4},
+    scaling_config=ScalingConfig(num_workers=4, use_gpu=True),
+)
+```
+
+**ZeRO Stages:** Stage 1 (optimizer partitioning), Stage 2 (+ gradient partitioning), Stage 3 (+ parameter partitioning). Higher stages save more memory but add communication overhead.
+
+## FSDP Integration
+
+```python
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+
+def train_func(config):
+    model = build_model()
+
+    # Don't call prepare_model — use FSDP directly
+    model = FSDP(
+        model,
+        sharding_strategy=ShardingStrategy.FULL_SHARD,
+        mixed_precision=MixedPrecision(
+            param_dtype=torch.bfloat16,
+            reduce_dtype=torch.bfloat16,
+        ),
+    )
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config["lr"])
+
+    for batch in train_loader:
+        loss = model(batch)
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+trainer = TorchTrainer(
+    train_func,
+    scaling_config=ScalingConfig(num_workers=4, use_gpu=True),
+    torch_config=ray.train.torch.TorchConfig(backend="nccl"),
+)
+```
+
+**Note:** When using FSDP or DeepSpeed, do NOT call `ray.train.torch.prepare_model()` — it wraps in DDP which conflicts with these frameworks. See the **fsdp** skill for detailed FSDP configuration.
 
 ## Data Loading with Ray Data
 
@@ -258,6 +330,36 @@ tuner = tune.Tuner(
 results = tuner.fit()
 best_result = results.get_best_result(metric="eval_loss", mode="min")
 ```
+
+## TorchConfig
+
+```python
+from ray.train.torch import TorchConfig
+
+torch_config = TorchConfig(
+    backend="nccl",        # "nccl" for GPU (default), "gloo" for CPU
+    timeout_s=1800,        # distributed timeout (seconds)
+)
+
+trainer = TorchTrainer(
+    train_func,
+    torch_config=torch_config,
+    scaling_config=ScalingConfig(num_workers=4, use_gpu=True),
+)
+```
+
+## Multi-Node Training
+
+For multi-node, checkpoint storage must be shared/remote:
+
+```python
+run_config = RunConfig(
+    storage_path="s3://bucket/experiments",  # or NFS path
+    name="multi-node-experiment",
+)
+```
+
+Ray Train handles `MASTER_ADDR`, `MASTER_PORT`, `WORLD_SIZE`, `RANK`, and `LOCAL_RANK` env vars automatically.
 
 ## Debugging
 
