@@ -214,6 +214,71 @@ trainer = TorchTrainer(
 )
 ```
 
+## Aggregations
+
+```python
+# Global aggregations
+ds.count()
+ds.sum("value")
+ds.min("value")
+ds.max("value")
+ds.mean("value")
+ds.std("value")
+ds.unique("category")
+ds.summary()             # statistical summary by data type
+
+# GroupBy aggregations
+ds.groupby("category").count()
+ds.groupby("category").mean("value")
+ds.groupby("category").sum("value")
+ds.groupby(["cat1", "cat2"]).max("value")
+```
+
+## Joins
+
+```python
+ds1 = ray.data.from_items([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}])
+ds2 = ray.data.from_items([{"id": 1, "score": 0.9}, {"id": 2, "score": 0.8}])
+
+# Inner join (default)
+joined = ds1.join(ds2, on="id")
+
+# Left join
+joined = ds1.join(ds2, on="id", join_type="left")
+```
+
+## Union and Zip
+
+```python
+# Concatenate datasets
+combined = ds1.union(ds2)
+
+# Zip datasets column-wise (must have same row count)
+zipped = ds1.zip(ds2)
+```
+
+## Custom Datasources
+
+```python
+from ray.data.datasource import Datasource
+
+class MyDatasource(Datasource):
+    def get_read_tasks(self, parallelism):
+        # Return list of ReadTask
+        ...
+
+ds = ray.data.read_datasource(MyDatasource(), parallelism=10)
+```
+
+## Data Context Configuration
+
+```python
+ctx = ray.data.DataContext.get_current()
+ctx.target_max_block_size = 128 * 1024 * 1024   # 128MB blocks
+ctx.execution_options.resource_limits.object_store_memory = 10e9
+ctx.execution_options.verbose_progress = True
+```
+
 ## Shuffling and Repartitioning
 
 ```python
