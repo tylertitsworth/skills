@@ -10,27 +10,50 @@ Skills are loaded dynamically when an agent detects a matching task. The `descri
 
 ## Available Skills
 
+### Infrastructure & Orchestration
+
 | Skill | Description |
 |-------|-------------|
 | [kueue](kueue/) | Kubernetes-native job queueing with GPU quota management |
 | [kuberay](kuberay/) | Deploy and manage Ray clusters on Kubernetes |
-| [ray-core](ray-core/) | Distributed computing primitives with Ray |
-| [ray-data](ray-data/) | Scalable data loading and preprocessing for ML |
-| [ray-serve](ray-serve/) | Model serving and inference with Ray Serve |
-| [ray-train](ray-train/) | Distributed training with Ray Train |
+| [operator-sdk](operator-sdk/) | Build Kubernetes operators for ML workloads |
 | [flyte-deployment](flyte-deployment/) | Deploy and operate Flyte on Kubernetes |
 | [flyte-sdk](flyte-sdk/) | Author ML workflows with Flytekit |
-| [wandb](wandb/) | Experiment tracking with Weights & Biases |
-| [operator-sdk](operator-sdk/) | Build Kubernetes operators for ML workloads |
+| [flyte-kuberay](flyte-kuberay/) | Run Ray workloads as Flyte tasks |
+
+### Training
+
+| Skill | Description |
+|-------|-------------|
 | [pytorch](pytorch/) | PyTorch model development and GPU training |
+| [fsdp](fsdp/) | Fully Sharded Data Parallel distributed training |
+| [megatron-lm](megatron-lm/) | Large-scale model training with Megatron-LM |
+| [ray-train](ray-train/) | Distributed training with Ray Train |
+| [verl](verl/) | RLHF/GRPO post-training with verl |
+
+### Inference & Evaluation
+
+| Skill | Description |
+|-------|-------------|
 | [vllm](vllm/) | High-throughput LLM serving with vLLM |
 | [openai-api](openai-api/) | OpenAI-compatible API integration |
-| [huggingface-transformers](huggingface-transformers/) | Transformers library for fine-tuning and inference |
-| [fsdp](fsdp/) | Fully Sharded Data Parallel distributed training |
-| [verl](verl/) | RLHF/GRPO training with vERL |
-| [megatron-lm](megatron-lm/) | Large-scale model training with Megatron-LM |
-| [triton-inference-server](triton-inference-server/) | Multi-framework model serving with Triton |
-| [llm-evaluation](llm-evaluation/) | LLM evaluation and benchmarking |
+| [ray-serve](ray-serve/) | Scalable model serving with Ray Serve |
+| [llm-evaluation](llm-evaluation/) | LLM benchmarking with lm-evaluation-harness |
+
+### Data & Models
+
+| Skill | Description |
+|-------|-------------|
+| [huggingface-transformers](huggingface-transformers/) | HuggingFace model/dataset downloads, loading, and management |
+| [ray-data](ray-data/) | Scalable data loading and preprocessing for ML |
+| [ray-core](ray-core/) | Distributed computing primitives with Ray |
+
+### Configuration & Monitoring
+
+| Skill | Description |
+|-------|-------------|
+| [hydra](hydra/) | Meta's configuration framework with OmegaConf |
+| [wandb](wandb/) | Experiment tracking with Weights & Biases |
 
 ## Installation
 
