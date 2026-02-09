@@ -429,6 +429,47 @@ with profile(
 # View: tensorboard --logdir=./profiler_logs
 ```
 
+## torch.export (Model Export)
+
+Export models for deployment:
+
+```python
+import torch
+
+model = MyModel()
+example_input = torch.randn(1, 3, 224, 224)
+
+# Export (graph capture, no Python overhead)
+exported = torch.export.export(model, (example_input,))
+
+# Save
+torch.export.save(exported, "model.pt2")
+
+# Load
+loaded = torch.export.load("model.pt2")
+output = loaded.module()(example_input)
+
+# Export to ONNX
+torch.onnx.export(model, example_input, "model.onnx", opset_version=17)
+```
+
+## Custom Autograd Functions
+
+```python
+class CustomMatMul(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, a, b):
+        ctx.save_for_backward(a, b)
+        return a @ b
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        a, b = ctx.saved_tensors
+        return grad_output @ b.T, a.T @ grad_output
+
+# Use: result = CustomMatMul.apply(tensor_a, tensor_b)
+```
+
 ## Debugging
 
 See `references/troubleshooting.md` for:
