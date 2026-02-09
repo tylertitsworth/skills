@@ -317,6 +317,111 @@ model = get_peft_model(model, lora_config)
 # Now train — uses ~6GB VRAM for a 7B model
 ```
 
+## Text Generation Parameters
+
+```python
+output = model.generate(
+    input_ids,
+    max_new_tokens=256,
+    temperature=0.7,
+    top_p=0.9,
+    top_k=50,
+    repetition_penalty=1.2,
+    do_sample=True,              # False = greedy
+    num_beams=1,                 # >1 = beam search
+    num_return_sequences=1,
+    stop_strings=["<|end|>"],
+    tokenizer=tokenizer,         # required for stop_strings
+)
+```
+
+### Chat Templates
+
+```python
+messages = [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"},
+]
+prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+# Or tokenize directly
+inputs = tokenizer.apply_chat_template(messages, return_tensors="pt", add_generation_prompt=True)
+output = model.generate(inputs.to(model.device), max_new_tokens=256)
+response = tokenizer.decode(output[0][inputs.shape[-1]:], skip_special_tokens=True)
+```
+
+## Model Quantization
+
+### GPTQ (Post-Training Quantization)
+
+```python
+from transformers import GPTQConfig
+
+quantization_config = GPTQConfig(bits=4, dataset="c4", tokenizer=tokenizer)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name, quantization_config=quantization_config, device_map="auto"
+)
+```
+
+### AWQ
+
+```python
+from transformers import AwqConfig
+
+quantization_config = AwqConfig(bits=4, fuse_max_seq_len=512)
+model = AutoModelForCausalLM.from_pretrained(
+    "TheBloke/Llama-2-7B-AWQ", quantization_config=quantization_config, device_map="auto"
+)
+```
+
+## Evaluation
+
+```python
+import evaluate
+
+# Load metrics
+accuracy = evaluate.load("accuracy")
+bleu = evaluate.load("bleu")
+rouge = evaluate.load("rouge")
+
+# Compute
+results = accuracy.compute(predictions=preds, references=labels)
+
+# With Trainer — pass compute_metrics
+def compute_metrics(eval_pred):
+    logits, labels = eval_pred
+    preds = logits.argmax(-1)
+    return accuracy.compute(predictions=preds, references=labels)
+
+trainer = Trainer(model=model, args=args, compute_metrics=compute_metrics, ...)
+```
+
+## Model Parallelism
+
+```python
+# Automatic device mapping (splits across GPUs)
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    device_map="auto",          # auto-split across available GPUs
+    torch_dtype=torch.bfloat16,
+)
+
+# Custom device map
+model = AutoModelForCausalLM.from_pretrained(
+    model_name,
+    device_map={
+        "model.embed_tokens": 0,
+        "model.layers.0-15": 0,
+        "model.layers.16-31": 1,
+        "model.norm": 1,
+        "lm_head": 1,
+    },
+)
+
+# Check device map
+print(model.hf_device_map)
+```
+
 ## Hub Operations
 
 ```python
