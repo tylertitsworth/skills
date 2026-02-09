@@ -74,7 +74,7 @@ lm_eval --model local-chat-completions \
 ### OpenAI API
 
 ```bash
-export OPENAI_API_KEY="sk-..."
+# Set OPENAI_API_KEY env var in pod spec from a K8s Secret
 lm_eval --model openai-completions \
   --model_args model=gpt-4o \
   --tasks mmlu --batch_size 16
