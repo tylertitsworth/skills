@@ -1,252 +1,225 @@
 ---
 name: aws-fsx
-description: Amazon FSx for Lustre on EKS — CSI driver, StorageClass configuration, S3 data repository integration, and ML storage patterns. Use when configuring FSx for Lustre storage on EKS for training data, checkpoints, or shared model weights.
+description: Amazon FSx for Lustre — architecture, performance model, striping, S3 data repository, metadata IOPS, and EKS integration. Use when understanding FSx for Lustre internals, tuning performance for ML workloads, configuring S3 data repositories, or troubleshooting Lustre filesystem behavior on EKS.
 ---
 
-# AWS FSx for Lustre on EKS
+# AWS FSx for Lustre
 
-Amazon FSx for Lustre is a fully managed high-performance parallel filesystem. Key properties for ML workloads:
-- **Throughput**: Up to hundreds of GB/s aggregate
-- **Latency**: Sub-millisecond
-- **S3 integration**: Native data repository — lazy-loads S3 objects as Lustre files
-- **Access mode**: ReadWriteMany (multiple pods across nodes)
-- **Protocol**: Lustre (POSIX-compatible)
+## Architecture
 
-### CSI Driver Installation
+An FSx for Lustre filesystem consists of:
 
-Install as EKS add-on (recommended) or via Helm:
+- **Metadata Targets (MDTs)**: Store file metadata — names, timestamps, permissions, directory structure, file layouts. Hosted on metadata servers (MDS).
+- **Object Storage Targets (OSTs)**: Store actual file data. Each OST is backed by a disk (SSD or HDD). Files are striped across OSTs for parallel I/O.
+- **File servers**: In-memory cache layer in front of OSTs. Hot data is served from cache (network-limited), cold data from disk.
+
+```
+Client (pod) ─── Lustre client ─── File servers ─── OSTs (data)
+                                      │                └── SSD or HDD disks
+                                      └── MDT (metadata)
+```
+
+Every client mounts the full filesystem and communicates directly with the file servers hosting the relevant OSTs — no single server bottleneck.
+
+### Read/Write Paths
+
+- **Cached read**: Client → file server in-memory/SSD cache → network-limited throughput
+- **Uncached read**: Client → file server → disk → limited by lower of network and disk throughput
+- **Write**: Client → file server → disk → limited by lower of network and disk throughput
+- **S3 lazy load**: First access to an S3-backed file triggers a fetch from S3 → stored on OSTs → subsequent reads from OSTs
+
+### Client Throughput Limits
+
+| Client Network Interface | Max Throughput per Client |
+|-------------------------|-------------------------|
+| Standard ENA | 100 Gbps (5 Gbps per OST) |
+| EFA | 700 Gbps |
+| EFA with GPUDirect Storage (GDS) | 1200 Gbps |
+
+For filesystems with >10 GB/s throughput capacity, AWS recommends EFA-enabled clients. GDS allows GPU memory to read/write directly to Lustre storage without CPU copies.
+
+## Deployment Types
+
+| Type | Durability | Throughput | Min Size | Use Case |
+|------|-----------|------------|----------|----------|
+| `SCRATCH_1` | None | 200 MB/s per TiB (burst) | 1.2 TiB | Ephemeral training data |
+| `SCRATCH_2` | None | 200 MB/s per TiB (burst) | 1.2 TiB | Better networking than SCRATCH_1 |
+| `PERSISTENT_1` | In-AZ replication | 50–200 MB/s per TiB | 1.2 TiB | Longer-lived workloads |
+| `PERSISTENT_2` | In-AZ replication | 125–1000 MB/s per TiB | 1.2 TiB | Production, highest throughput |
+
+**SCRATCH** filesystems have no data replication — data is lost if hardware fails. Ideal for training jobs where data is re-derivable from S3.
+
+**PERSISTENT_2** supports `perUnitStorageThroughput` of 125, 250, 500, or 1000 MB/s per TiB. 1000 MB/s requires SSD storage.
+
+**Storage sizing**: Minimum 1.2 TiB, then increments of 2.4 TiB. Throughput scales linearly with size.
+
+## Striping
+
+Lustre splits files into chunks distributed across multiple OSTs. This is the primary performance lever for large file I/O.
+
+### Default Progressive File Layout (PFL)
+
+Filesystems created after August 2023 use a 4-component PFL:
+
+| File Size | Stripe Count | Effect |
+|-----------|-------------|--------|
+| ≤ 100 MiB | 1 | Single OST, no overhead |
+| 100 MiB – 10 GiB | 8 | Parallel I/O across 8 OSTs |
+| 10 GiB – 100 GiB | 16 | Higher parallelism |
+| > 100 GiB | 32 | Maximum parallelism |
+
+### Custom Striping
 
 ```bash
-# EKS add-on (requires EKS Pod Identity agent)
-aws eks create-addon \
-  --cluster-name my-cluster \
-  --addon-name aws-fsx-csi-driver \
-  --service-account-role-arn arn:aws:iam::ACCOUNT:role/FsxCsiDriverRole
+# Set stripe count on a directory (applies to new files)
+lfs setstripe -c 16 /mount/training-data/
 
-# Or via kubectl
-kubectl apply -k "github.com/kubernetes-sigs/aws-fsx-csi-driver/deploy/kubernetes/overlays/stable/?ref=release-1.8"
+# Set PFL for a directory
+lfs setstripe -E 100M -c 1 -E 10G -c 8 -E 100G -c 16 -E -1 -c 32 /mount/data/
+
+# Check file layout
+lfs getstripe /mount/data/large-file.bin
+
+# Migrate existing file to new layout
+lfs migrate -c 32 /mount/data/existing-file.bin
+
+# View OST usage
+lfs df -h /mount/
 ```
 
-#### IAM Policy
+### Striping Guidelines
 
-The CSI driver needs permissions to create/delete FSx filesystems. Attach this policy to the driver's service account role:
+- **Large files (>1 GiB)**: Higher stripe count improves throughput. Stripe across many OSTs.
+- **Small files (<100 MiB)**: Stripe count of 1. Higher counts add metadata overhead (network round-trip per OST in layout).
+- **Stripe count -1**: Stripe across all OSTs. Use for largest files.
+- **Stripe size**: Default 1 MiB. Rarely needs changing.
+- **Don't set high stripe counts on directories with many small files** — metadata overhead degrades performance.
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "fsx:CreateFileSystem",
-        "fsx:DeleteFileSystem",
-        "fsx:DescribeFileSystems",
-        "fsx:TagResource",
-        "fsx:UpdateFileSystem"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "s3:GetBucketLocation",
-        "s3:ListBucket",
-        "s3:GetObject",
-        "s3:PutObject"
-      ],
-      "Resource": ["arn:aws:s3:::ml-*", "arn:aws:s3:::ml-*/*"]
-    },
-    {
-      "Effect": "Allow",
-      "Action": ["iam:CreateServiceLinkedRole"],
-      "Resource": "arn:aws:iam::*:role/aws-service-role/fsx.amazonaws.com/*",
-      "Condition": {
-        "StringLike": {"iam:AWSServiceName": "fsx.amazonaws.com"}
-      }
-    }
-  ]
-}
+### What Striping Can't Fix
+
+- **Metadata-heavy workloads** (millions of tiny files, `ls` on huge directories): Limited by MDT IOPS, not striping.
+- **Single-threaded sequential reads**: Limited by single OST throughput. Application must use parallel I/O.
+- **Random small I/O**: Lustre is optimized for large sequential I/O. Small random reads/writes are limited by latency.
+
+## Metadata IOPS
+
+Metadata operations (file create, open, close, delete, directory operations) are limited by MDT performance.
+
+### PERSISTENT_2: User-Provisioned Metadata IOPS
+
+| Operation | IOPS per Provisioned Unit |
+|-----------|--------------------------|
+| File create, open, close | 2 |
+| File delete | 1 |
+| Directory create, rename | 0.1 |
+| Directory delete | 0.2 |
+
+Valid provisioned values: 1500, 3000, 6000, 12000, and multiples of 12000 up to 192000.
+
+### SSD: Automatic Mode
+
+| Storage Capacity | Included Metadata IOPS |
+|-----------------|----------------------|
+| 1.2 TiB | 1500 |
+| 2.4 TiB | 3000 |
+| 4.8–9.6 TiB | 6000 |
+| 12–45.6 TiB | 12000 |
+| ≥48 TiB | 12000 per 24 TiB |
+
+### ML Workload Implications
+
+- **Training data loading**: Mostly sequential reads of large files → limited by OST throughput, not metadata. Striping helps.
+- **Checkpoint saving**: Large sequential writes → striping helps. But initial file creation hits MDT.
+- **Preprocessing with many small files**: Can bottleneck on metadata IOPS. Consider pre-aggregating into fewer large files (TFRecord, WebDataset, etc.).
+
+## S3 Data Repository
+
+FSx for Lustre can link to an S3 bucket, presenting S3 objects as Lustre files.
+
+### How It Works
+
+1. **Import**: S3 object metadata (name, size, timestamps) is imported into the MDT. File data is **not** copied — it's lazy-loaded on first access.
+2. **First read**: Triggers an HSM (Hierarchical Storage Management) restore from S3 → data is fetched and cached on OSTs.
+3. **Subsequent reads**: Served from OSTs (no S3 access).
+4. **Auto-import**: With `autoImportPolicy`, changes in S3 are automatically reflected in Lustre metadata.
+5. **Export**: Modified files can be written back to S3 via `autoExportPolicy` or manual `lfs hsm_archive`.
+
+### Auto-Import Policies
+
+| Policy | Effect |
+|--------|--------|
+| `NONE` | No auto-import. Manual import only. |
+| `NEW` | Import new S3 objects |
+| `NEW_CHANGED` | Import new + modified S3 objects |
+| `NEW_CHANGED_DELETED` | Import new + modified, delete removed |
+
+### Pre-Warming Data
+
+Lazy loading means first-epoch training is slower (S3 fetch latency). Pre-warm with:
+
+```bash
+# Restore specific files from S3 archive to OSTs
+lfs hsm_restore /mount/data/file1 /mount/data/file2
+
+# Bulk restore a directory
+nohup find /mount/data/ -type f -print0 | xargs -0 -n 1 lfs hsm_restore &
 ```
 
-### StorageClass Parameters
+### S3 Import Chunk Size
 
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fsx-lustre-persistent
-provisioner: fsx.csi.aws.com
-parameters:
-  subnetId: subnet-0123456789abcdef0
-  securityGroupIds: sg-0123456789abcdef0
-  deploymentType: PERSISTENT_2
-  storageType: SSD
-  perUnitStorageThroughput: "250"
-  dataCompressionType: LZ4
-  autoImportPolicy: NEW_CHANGED_DELETED
-  s3ImportPath: s3://ml-training-data
-  s3ExportPath: s3://ml-training-data/exports
-  fileSystemTypeVersion: "2.15"
-mountOptions:
-  - flock
-reclaimPolicy: Delete
-volumeBindingMode: Immediate
-```
+The `ImportedFileChunkSize` parameter (default: 1 GiB) controls how S3-imported files are striped. Files larger than this value are automatically striped across `ceil(FileSize / ChunkSize) + 1` OSTs.
 
-#### All StorageClass Parameters
+## Compression
 
-| Parameter | Values | Default | Effect |
-|-----------|--------|---------|--------|
-| `subnetId` | subnet ID | — | **Required.** Subnet for FSx ENI (must be in same VPC as EKS nodes) |
-| `securityGroupIds` | comma-separated SG IDs | — | Security groups for FSx ENI (port 988 inbound required) |
-| `deploymentType` | `SCRATCH_1`, `SCRATCH_2`, `PERSISTENT_1`, `PERSISTENT_2` | `SCRATCH_1` | Filesystem durability and performance tier |
-| `storageType` | `SSD`, `HDD` | `SSD` | Storage media (HDD only with PERSISTENT_1) |
-| `perUnitStorageThroughput` | `125`, `250`, `500`, `1000` | — | MB/s per TiB (PERSISTENT only). 1000 requires SSD + PERSISTENT_2 |
-| `dataCompressionType` | `NONE`, `LZ4` | `NONE` | Transparent compression |
-| `autoImportPolicy` | `NONE`, `NEW`, `NEW_CHANGED`, `NEW_CHANGED_DELETED` | `NONE` | Auto-import from S3 when files change |
-| `s3ImportPath` | `s3://bucket/prefix` | — | S3 data repository to import from |
-| `s3ExportPath` | `s3://bucket/prefix` | — | S3 path for exports (same bucket as import) |
-| `fileSystemTypeVersion` | `2.10`, `2.12`, `2.15` | `2.15` | Lustre version |
-| `extraTags` | `key1=val1,key2=val2` | — | Additional AWS tags |
+LZ4 transparent compression (`dataCompressionType: LZ4`) reduces storage costs and can improve throughput for compressible data. Applied to new files written after enabling.
 
-#### Deployment Types
+## Supported and Not Supported
 
-| Type | Durability | Performance | Min Size | Throughput | Use Case |
-|------|-----------|-------------|----------|-----------|----------|
-| `SCRATCH_1` | None (no replication) | Burst: 200 MB/s/TiB | 1.2 TiB | 200 MB/s/TiB | Short-lived training jobs |
-| `SCRATCH_2` | None | Burst: 200 MB/s/TiB | 1.2 TiB | 200 MB/s/TiB | Better networking than SCRATCH_1 |
-| `PERSISTENT_1` | Within-AZ replication | Configurable | 1.2 TiB | 50-200 MB/s/TiB | Long-running workloads |
-| `PERSISTENT_2` | Within-AZ replication | Configurable | 1.2 TiB | 125-1000 MB/s/TiB | Production, highest throughput |
+### Supported
 
-**Minimum filesystem sizes**: 1.2 TiB, 2.4 TiB, or increments of 2.4 TiB (SCRATCH) / 2.4 TiB (PERSISTENT_2 SSD).
+- POSIX filesystem semantics (with caveats)
+- ReadWriteMany — multiple pods across nodes
+- `lfs` CLI for stripe management, HSM, quotas
+- S3 data repository (import/export)
+- Transparent LZ4 compression
+- File-level encryption at rest (AWS managed or customer KMS keys)
+- Lustre client on Amazon Linux 2, AL2023, Ubuntu
+- EFA and GPUDirect Storage for maximum throughput
 
-### Dynamic Provisioning with S3
+### Not Supported / Limitations
 
-The primary ML use case: FSx Lustre acts as a high-performance cache for S3 training data.
+| Limitation | Detail |
+|-----------|--------|
+| **Single AZ** | FSx for Lustre filesystems exist in one subnet/AZ. No multi-AZ replication. |
+| **No NFS/SMB** | Lustre protocol only. Requires Lustre client (kernel module). |
+| **No online resize down** | Can increase capacity, cannot shrink. |
+| **No snapshots** | No built-in snapshot capability (unlike EBS or FSx ONTAP). |
+| **Minimum size** | 1.2 TiB minimum. Can't create small filesystems. |
+| **S3 lazy load latency** | First access to uncached S3-backed files has S3 latency. |
+| **Metadata IOPS cap** | Directory operations are slow relative to data I/O. Millions of tiny files suffer. |
+| **Client compatibility** | Requires specific kernel versions with Lustre client module. |
+| **Hard link limit** | Lustre has lower hard link limits than ext4/XFS. |
+| **No POSIX ACLs** | Only basic Unix permissions (uid/gid/mode). |
 
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fsx-lustre-s3
-provisioner: fsx.csi.aws.com
-parameters:
-  subnetId: subnet-0123456789abcdef0
-  securityGroupIds: sg-0123456789abcdef0
-  deploymentType: SCRATCH_2
-  s3ImportPath: s3://ml-training-data/imagenet
-  autoImportPolicy: NEW_CHANGED
-  dataCompressionType: LZ4
-reclaimPolicy: Delete
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: training-data
-spec:
-  accessModes: [ReadWriteMany]
-  storageClassName: fsx-lustre-s3
-  resources:
-    requests:
-      storage: 1200Gi
-```
+## EKS CSI Driver
 
-**Data flow**: S3 objects appear as files on the Lustre filesystem. On first access, data is lazy-loaded from S3 (transparent to the application). With `autoImportPolicy`, new/changed S3 objects are automatically reflected.
+The `fsx.csi.aws.com` CSI driver enables dynamic and static provisioning. Install as an EKS add-on (requires Pod Identity agent). Key StorageClass parameters:
 
-### Static Provisioning (Pre-existing Filesystem)
+| Parameter | Values | Effect |
+|-----------|--------|--------|
+| `subnetId` | subnet ID | **Required.** Subnet for filesystem ENI |
+| `securityGroupIds` | SG IDs | Security groups (must allow TCP 988 inbound) |
+| `deploymentType` | `SCRATCH_1`, `SCRATCH_2`, `PERSISTENT_1`, `PERSISTENT_2` | Durability/performance tier |
+| `perUnitStorageThroughput` | `125`–`1000` | MB/s per TiB (PERSISTENT only) |
+| `dataCompressionType` | `NONE`, `LZ4` | Transparent compression |
+| `s3ImportPath` | `s3://bucket/prefix` | S3 data repository source |
+| `autoImportPolicy` | `NONE`, `NEW`, `NEW_CHANGED`, `NEW_CHANGED_DELETED` | Auto-import from S3 |
 
-```yaml
-apiVersion: v1
-kind: PersistentVolume
-metadata:
-  name: fsx-pv
-spec:
-  capacity:
-    storage: 1200Gi
-  accessModes: [ReadWriteMany]
-  mountOptions:
-    - flock
-  csi:
-    driver: fsx.csi.aws.com
-    volumeHandle: fs-0123456789abcdef0
-    volumeAttributes:
-      dnsname: fs-0123456789abcdef0.fsx.us-west-2.amazonaws.com
-      mountname: fsx
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: fsx-claim
-spec:
-  accessModes: [ReadWriteMany]
-  storageClassName: ""
-  resources:
-    requests:
-      storage: 1200Gi
-  volumeName: fsx-pv
-```
-
-### Training Job Example
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: training-job
-spec:
-  template:
-    spec:
-      containers:
-        - name: trainer
-          image: my-training-image:latest
-          resources:
-            requests:
-              nvidia.com/gpu: "8"
-              memory: "64Gi"
-            limits:
-              nvidia.com/gpu: "8"
-          volumeMounts:
-            - name: training-data
-              mountPath: /data
-              readOnly: true
-            - name: checkpoints
-              mountPath: /checkpoints
-      volumes:
-        - name: training-data
-          persistentVolumeClaim:
-            claimName: training-data     # FSx Lustre backed by S3
-        - name: checkpoints
-          persistentVolumeClaim:
-            claimName: checkpoint-storage # Separate PVC for writes
-      restartPolicy: Never
-```
-
-### Multi-Pod Access
-
-FSx for Lustre supports `ReadWriteMany` — multiple pods across multiple nodes can mount the same filesystem simultaneously. This is critical for:
-- **Data-parallel training**: All workers read from the same dataset
-- **Shared checkpoints**: Coordinator writes, all workers can read
-- **Model serving**: Multiple inference pods load the same weights
-
-### Networking Requirements
-
-- FSx ENI must be in a subnet reachable from EKS worker nodes (same VPC or peered)
-- Security group must allow **inbound TCP port 988** (Lustre protocol)
-- For best performance, place EKS nodes and FSx filesystem in the **same Availability Zone**
-
-## Troubleshooting
-
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| PVC stuck in Pending | Missing subnet/SG in StorageClass | Verify `subnetId` and `securityGroupIds` |
-| Mount timeout | Security group blocking port 988 | Add inbound TCP 988 rule |
-| Slow first reads from S3 | Lazy loading on first access | Pre-warm with `lfs hsm_restore` or prefetch |
-| CSI driver pods not running | Missing IAM permissions | Check Pod Identity / IRSA role |
-| "filesystem not found" on static PV | Wrong `volumeHandle` or `dnsname` | Verify filesystem ID and DNS name in AWS console |
+See `references/troubleshooting.md` for common issues.
 
 ## Cross-References
 
-- [aws-efa](../aws-efa/) — EFA networking for the GPU nodes consuming FSx storage
-- [ray-train](../ray-train/) — Distributed training jobs that consume FSx-backed PVCs
+- [aws-efa](../aws-efa/) — EFA networking for maximum client throughput (700 Gbps+)
+- [ray-train](../ray-train/) — Distributed training jobs consuming FSx-backed PVCs
 - [kueue](../kueue/) — Queue training jobs that mount FSx volumes
 - [megatron-lm](../megatron-lm/) — Large-scale training with shared checkpoint storage
