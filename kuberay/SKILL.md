@@ -229,6 +229,8 @@ Override `serviceType` in `headGroupSpec`: `ClusterIP` (default), `NodePort`, `L
 
 ## RayJob
 
+RayJob manages two things: a **RayCluster** and a **submitter** that calls `ray job submit` to run your code on that cluster. The submitter is NOT your workload — it's a lightweight pod that submits and monitors.
+
 ```yaml
 apiVersion: ray.io/v1
 kind: RayJob
@@ -247,7 +249,7 @@ spec:
   ttlSecondsAfterFinished: 300
   activeDeadlineSeconds: 7200          # max total runtime
   backoffLimit: 2                      # retries (each = new cluster)
-  submissionMode: K8sJobMode
+  submissionMode: K8sJobMode           # see submission modes below
   suspend: false                       # true for Kueue integration
   rayClusterSpec:
     rayVersion: "2.53.0"
@@ -278,6 +280,17 @@ spec:
                 nvidia.com/gpu: "1"
 ```
 
+### Submission Modes
+
+| Mode | How It Works | When to Use |
+|---|---|---|
+| `K8sJobMode` (default) | Creates a K8s Job pod that runs `ray job submit` | Most reliable. Works with Kueue. |
+| `HTTPMode` | Operator sends HTTP POST to Ray Dashboard directly | No extra pod. Dashboard must be reachable from operator. |
+| `SidecarMode` | Injects submitter container into head pod | No extra pod. Cannot use `clusterSelector`. Head restart must be `Never`. |
+| `InteractiveMode` (alpha) | Waits for user to submit via `kubectl ray` plugin | Jupyter/notebook workflows. |
+
+In K8sJobMode, the submitter pod gets two injected env vars: `RAY_DASHBOARD_ADDRESS` and `RAY_JOB_SUBMISSION_ID`.
+
 ### Key Fields
 
 | Field | Purpose |
@@ -287,19 +300,13 @@ spec:
 | `shutdownAfterJobFinishes` | Delete RayCluster on completion |
 | `ttlSecondsAfterFinished` | Delay before cleanup |
 | `activeDeadlineSeconds` | Max runtime before `DeadlineExceeded` failure |
-| `backoffLimit` | Retries (each retry creates a new cluster) |
-| `submissionMode` | `K8sJobMode` (default), `HTTPMode`, `InteractiveMode` |
+| `backoffLimit` | Full retries (each = new cluster). Different from `submitterConfig.backoffLimit` (submitter pod retries). |
+| `submissionMode` | See table above |
 | `suspend` | Set `true` for Kueue (Kueue controls unsuspension) |
 | `clusterSelector` | Use existing RayCluster instead of creating one |
-| `entrypointNumCpus/Gpus` | Resources for the entrypoint driver |
+| `entrypointNumCpus/Gpus` | Reserve head resources for driver script |
 
-### Submission Modes
-
-| Mode | Behavior |
-|---|---|
-| `K8sJobMode` (default) | Creates a K8s Job to submit Ray job. Most reliable. |
-| `HTTPMode` | Submits via HTTP to dashboard. Requires dashboard reachable. |
-| `InteractiveMode` | For Jupyter/notebook use. Driver runs in submitter pod. |
+For full RayJob details (lifecycle, deletion strategies, submitter customization, troubleshooting), see `references/rayjob.md`.
 
 ### Using Existing Clusters
 
