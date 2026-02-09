@@ -311,6 +311,50 @@ for batch in dataloader:
     optimizer.zero_grad()
 ```
 
+## FSDP2 (torch.distributed._composable.fsdp)
+
+PyTorch 2.4+ introduces FSDP2 — a composable, per-parameter sharding API:
+
+```python
+from torch.distributed._composable.fsdp import fully_shard, MixedPrecisionPolicy
+
+mp_policy = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16)
+
+# Apply per-module (more granular control)
+for layer in model.layers:
+    fully_shard(layer, mp_policy=mp_policy)
+fully_shard(model, mp_policy=mp_policy)
+```
+
+**Key differences from FSDP1:**
+- Per-parameter sharding (composable with TP, CP, etc.)
+- No wrapper — modifies model in-place
+- Better integration with `torch.compile`
+- Used by TorchTitan and Megatron-LM Bridge
+
+## Tensor Parallel + FSDP (2D Parallelism)
+
+Combine FSDP (data parallel) with TP (model parallel) for very large models:
+
+```python
+from torch.distributed.tensor.parallel import parallelize_module, ColwiseParallel, RowwiseParallel
+from torch.distributed._composable.fsdp import fully_shard
+
+# 1. Apply tensor parallelism within each node
+parallelize_module(model, tp_mesh, {
+    "attention.q_proj": ColwiseParallel(),
+    "attention.v_proj": ColwiseParallel(),
+    "attention.o_proj": RowwiseParallel(),
+    "mlp.gate_proj": ColwiseParallel(),
+    "mlp.down_proj": RowwiseParallel(),
+})
+
+# 2. Apply FSDP across nodes
+for layer in model.layers:
+    fully_shard(layer, mesh=dp_mesh)
+fully_shard(model, mesh=dp_mesh)
+```
+
 ## torch.compile with FSDP
 
 ```python
