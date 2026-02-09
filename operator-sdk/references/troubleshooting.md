@@ -171,7 +171,7 @@ Or via flag: `--leader-elect=false`
 
 Ensure `GO111MODULE=on` and you're outside `$GOPATH/src`, or use `--repo`:
 ```bash
-export GO111MODULE=on
+# Set GO111MODULE=on in container env
 operator-sdk init --domain example.com --repo github.com/myorg/my-op
 ```
 
