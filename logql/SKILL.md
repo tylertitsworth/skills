@@ -364,3 +364,7 @@ groups:
 | Unwrap | N/A | Extract numeric values from logs |
 | Aggregations | Same operators | Same operators |
 | Subqueries | `func(v[range:step])` | Same syntax |
+
+## Cross-References
+
+- [promql](../promql/) — PromQL for Prometheus metrics (LogQL is based on PromQL)
