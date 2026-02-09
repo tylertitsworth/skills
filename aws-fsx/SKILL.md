@@ -132,30 +132,67 @@ Valid provisioned values: 1500, 3000, 6000, 12000, and multiples of 12000 up to 
 - **Checkpoint saving**: Large sequential writes → striping helps. But initial file creation hits MDT.
 - **Preprocessing with many small files**: Can bottleneck on metadata IOPS. Consider pre-aggregating into fewer large files (TFRecord, WebDataset, etc.).
 
-## S3 Data Repository
+## Data Repository Associations (DRA)
 
-FSx for Lustre can link to an S3 bucket, presenting S3 objects as Lustre files.
+DRAs are the mechanism for linking FSx for Lustre to S3 buckets. Each DRA maps a filesystem path to an S3 prefix, creating a bidirectional data bridge.
 
-### How It Works
+### Key Properties
 
-1. **Import**: S3 object metadata (name, size, timestamps) is imported into the MDT. File data is **not** copied — it's lazy-loaded on first access.
-2. **First read**: Triggers an HSM (Hierarchical Storage Management) restore from S3 → data is fetched and cached on OSTs.
-3. **Subsequent reads**: Served from OSTs (no S3 access).
-4. **Auto-import**: With `autoImportPolicy`, changes in S3 are automatically reflected in Lustre metadata.
-5. **Export**: Modified files can be written back to S3 via `autoExportPolicy` or manual `lfs hsm_archive`.
+- **Maximum 8 DRAs per filesystem**
+- Each DRA maps one filesystem path to one S3 prefix (1:1)
+- Paths cannot overlap (e.g., `/ns1/` and `/ns1/subdir/` cannot coexist)
+- `/` as filesystem path is only allowed for the first DRA
+- Only one DRA request processed at a time (others queue)
+- **Not available** on Scratch 1 or Lustre 2.10 filesystems
 
-### Auto-Import Policies
+### How DRAs Work
+
+1. **Metadata import**: S3 object metadata (name, size, timestamps) is loaded into the MDT. File data is **not** copied — it's lazy-loaded on first access.
+2. **First read**: Triggers an HSM (Hierarchical Storage Management) restore from S3 → data fetched and cached on OSTs.
+3. **Subsequent reads**: Served from OSTs (no S3 latency).
+4. **Auto-import**: S3 changes automatically reflected in Lustre metadata.
+5. **Auto-export**: Filesystem changes automatically written back to S3 (asynchronous).
+
+### DRA Configuration
+
+| Setting | Options | Default (Console) | Default (CLI/API) |
+|---------|---------|-------------------|-------------------|
+| **Import policy** | None, New, Changed, Deleted (any combination) | New + Changed + Deleted | Disabled |
+| **Export policy** | None, New, Changed, Deleted (any combination) | New + Changed + Deleted | Disabled |
+| **Import metadata on create** | Yes / No | Yes | No |
+
+**Auto-import policies**:
 
 | Policy | Effect |
 |--------|--------|
-| `NONE` | No auto-import. Manual import only. |
-| `NEW` | Import new S3 objects |
-| `NEW_CHANGED` | Import new + modified S3 objects |
-| `NEW_CHANGED_DELETED` | Import new + modified, delete removed |
+| None | No auto-import. Use import data repository tasks manually. |
+| New | Import metadata for new S3 objects |
+| Changed | Import metadata for modified S3 objects |
+| Deleted | Remove metadata for deleted S3 objects |
+
+**Auto-export**: Exports regular files, symlinks, and directories. Does **not** export special files (FIFO, block, character, socket).
+
+**Conflict handling**: If the same file is modified in both the filesystem and S3 simultaneously, there is **no automatic conflict resolution**. Application-level coordination is required.
+
+### Import and Export Data Repository Tasks
+
+In addition to automatic import/export, you can run on-demand tasks:
+
+- **Import task**: Loads metadata for new/changed files from S3 into the filesystem
+- **Export task**: Exports file data and metadata to S3
+
+**Note**: Auto-export and export tasks **cannot be used simultaneously** on the same filesystem. Auto-import and import tasks **can** be used simultaneously.
+
+### Cross-Region and Cross-Account
+
+| Feature | Cross-Region | Cross-Account |
+|---------|-------------|---------------|
+| Auto-import | ❌ Same region only | ✅ Supported |
+| Auto-export | ✅ Supported | ✅ Supported |
 
 ### Pre-Warming Data
 
-Lazy loading means first-epoch training is slower (S3 fetch latency). Pre-warm with:
+Lazy loading means first-epoch training has S3 latency on first access. Pre-warm with:
 
 ```bash
 # Restore specific files from S3 archive to OSTs
@@ -165,26 +202,98 @@ lfs hsm_restore /mount/data/file1 /mount/data/file2
 nohup find /mount/data/ -type f -print0 | xargs -0 -n 1 lfs hsm_restore &
 ```
 
-### S3 Import Chunk Size
+### ImportedFileChunkSize
 
-The `ImportedFileChunkSize` parameter (default: 1 GiB) controls how S3-imported files are striped. Files larger than this value are automatically striped across `ceil(FileSize / ChunkSize) + 1` OSTs.
+Controls how S3-imported files are striped (default: 1 GiB). Files larger than this value are automatically striped across `ceil(FileSize / ChunkSize) + 1` OSTs.
+
+## Intelligent-Tiering Storage Class
+
+An alternative to SSD/HDD storage classes. Automatically tiers data across three access tiers:
+
+| Tier | Latency | Cost | When Data Moves Here |
+|------|---------|------|---------------------|
+| Frequent Access | Sub-millisecond (SSD) | Highest | Recently accessed data |
+| Infrequent Access | Low (HDD) | Lower | Data not accessed recently |
+| Archive | Higher (retrieval delay) | Lowest | Rarely accessed data |
+
+- Optional **SSD read cache** for frequently accessed data
+- No minimum storage capacity — pay only for data stored
+- Starting at <$0.005/GB-month
+- **Not available** with Scratch deployments
+- Metadata IOPS: Only 6000 or 12000 (user-provisioned mode only, no automatic)
+
+**ML use case**: Good for long-lived datasets where only a subset is actively used. Training data accessed during current epoch stays in Frequent Access tier; older experiment data tiers down automatically.
 
 ## Compression
 
 LZ4 transparent compression (`dataCompressionType: LZ4`) reduces storage costs and can improve throughput for compressible data. Applied to new files written after enabling.
 
-## Supported and Not Supported
+## Backups
+
+- **Automatic backups**: Daily, stored in S3 (11 9's durability). Retention 0-90 days.
+- **Manual backups**: On-demand via console/CLI/API.
+- **Cross-region/cross-account backup copy**: For disaster recovery and compliance.
+- **Restore**: Creates a new filesystem from backup.
+- **Incremental**: Only changed data since last backup.
+- **Persistent filesystems only** — Scratch filesystems do not support backups.
+
+Backups are managed via AWS Backup for policy-based scheduling.
+
+## Storage Quotas
+
+User-level and group-level quotas to control storage consumption:
+
+```bash
+# Set quota for a user (soft limit, hard limit, grace period)
+lfs setquota -u username --block-softlimit 100G --block-hardlimit 120G /mount/
+
+# Set quota for a group
+lfs setquota -g groupname --block-softlimit 1T --block-hardlimit 1.2T /mount/
+
+# Check quota usage
+lfs quota -u username /mount/
+lfs quota -g groupname /mount/
+```
+
+Useful for multi-team environments sharing a filesystem to prevent any team from exhausting storage.
+
+## Encryption
+
+- **At rest**: All filesystems encrypted. AWS managed key (default) or customer-managed KMS key.
+- **In transit**: Encryption of data in transit between clients and file servers. Available in select regions. Enabled automatically for supported client kernel versions.
+
+## GPUDirect Storage (GDS)
+
+For EFA-enabled filesystems with NVIDIA GPUs, GDS enables direct data transfer between GPU memory and FSx for Lustre storage, bypassing CPU and system memory entirely.
+
+- **Throughput**: Up to 1200 Gbps per client (vs 700 Gbps with EFA alone)
+- **Requirements**: EFA-enabled filesystem, EFA-enabled GPU instance, NVIDIA GDS driver
+- Eliminates the CPU copy bottleneck for checkpoint writes and data loading
+
+## All Features Summary
 
 ### Supported
 
-- POSIX filesystem semantics (with caveats)
-- ReadWriteMany — multiple pods across nodes
-- `lfs` CLI for stripe management, HSM, quotas
-- S3 data repository (import/export)
+- POSIX filesystem semantics (with caveats below)
+- ReadWriteMany — multiple pods across nodes simultaneously
+- Data Repository Associations (DRA) — up to 8 S3 links per filesystem
+- Auto-import and auto-export with S3
+- Import/export data repository tasks (on-demand)
+- Progressive file layouts (PFL) with automatic striping
+- `lfs` CLI for stripe management, HSM operations, quotas
 - Transparent LZ4 compression
-- File-level encryption at rest (AWS managed or customer KMS keys)
-- Lustre client on Amazon Linux 2, AL2023, Ubuntu
-- EFA and GPUDirect Storage for maximum throughput
+- Encryption at rest (AWS managed or customer KMS keys)
+- Encryption in transit (select regions)
+- EFA (700 Gbps) and GPUDirect Storage (1200 Gbps) per-client throughput
+- Intelligent-Tiering storage class (automatic cost optimization)
+- Automatic and manual backups (persistent filesystems)
+- Cross-region and cross-account backup copy
+- Storage quotas (user and group level)
+- Lustre client on Amazon Linux 2, AL2023, Ubuntu, RHEL, CentOS, SUSE
+- EKS CSI driver (dynamic and static provisioning)
+- AWS Backup integration
+- CloudWatch metrics (throughput, IOPS, metadata ops, capacity)
+- Storage capacity scaling (increase online)
 
 ### Not Supported / Limitations
 
