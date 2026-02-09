@@ -85,7 +85,7 @@ trainer.n_gpus_per_node=8
 
 ## vLLM Rollout Issues
 
-### "CUDA error" or "NCCL error" during rollout
+### "CUDA error" or communication error during rollout
 
 The hybrid engine switches between training (FSDP) and rollout (vLLM) modes. Issues often arise during the transition.
 
@@ -170,12 +170,11 @@ Check that:
 ### Nodes can't communicate
 
 ```bash
-# Ensure NCCL can reach all nodes
-export NCCL_SOCKET_IFNAME=eth0
-export NCCL_IB_DISABLE=1  # if no InfiniBand
-
 # Check Ray cluster connectivity (verl uses Ray for orchestration)
 ray status
+
+# Verify nodes can reach each other
+ping $HEAD_NODE
 ```
 
 ### Inconsistent behavior across nodes
