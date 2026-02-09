@@ -48,8 +48,7 @@ Common causes:
    scaler.step(optimizer)
    scaler.update()
    ```
-4. **Use DeepSpeed ZeRO or FSDP** — See `large-model-training.md`
-5. **Enable activation checkpointing** — Trade compute for memory:
+4. **Enable activation checkpointing** — Trade compute for memory:
    ```python
    from torch.utils.checkpoint import checkpoint
    # or model.gradient_checkpointing_enable() for HuggingFace models
