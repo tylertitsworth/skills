@@ -262,6 +262,47 @@ Particularly effective for:
 - RAG with recurring document chunks
 - Multi-turn conversations (prior turns cached)
 
+### Vision / Multimodal Models
+
+```bash
+vllm serve Qwen/Qwen2-VL-7B-Instruct \
+  --max-model-len 8192 \
+  --limit-mm-per-prompt image=4   # max images per request
+```
+
+```python
+# API usage with images
+response = client.chat.completions.create(
+    model="Qwen/Qwen2-VL-7B-Instruct",
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "image_url", "image_url": {"url": "https://example.com/image.jpg"}},
+            {"type": "text", "text": "Describe this image."},
+        ],
+    }],
+)
+```
+
+### Tool Calling
+
+```bash
+vllm serve meta-llama/Llama-3.1-8B-Instruct \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes     # or llama3_json, mistral, etc.
+```
+
+### Disaggregated Prefill (v1 Engine)
+
+Separate prefill and decode phases across GPU pools for higher throughput:
+
+```bash
+vllm serve model \
+  --enable-disagg-prefill \
+  --prefill-tp 4 \
+  --decode-tp 4
+```
+
 ## Multi-GPU and Multi-Node
 
 ### Tensor Parallelism (Single Node)
