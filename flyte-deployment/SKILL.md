@@ -326,8 +326,7 @@ kubectl -n flyte logs deploy/flyte-binary | grep -i admin
 # Check workflow executions
 flytectl get execution --project my-project --domain development
 
-# Port forward to console
-kubectl -n flyte port-forward svc/flyte-binary 8088:8088 8089:8089
+# Access console via Ingress (configure in Helm values: ingress.host)
 ```
 
 ## Task Plugins
