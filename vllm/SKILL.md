@@ -319,17 +319,54 @@ llm = LLM(
 )
 ```
 
-### Disaggregated Prefill (v1 Engine)
+### Disaggregated Prefill-Decode Serving
+
+Separate prefill and decode phases onto different vLLM instances for independent TTFT/ITL tuning. See `references/disaggregated-serving.md` for full architecture, all connector types (NixlConnector, LMCacheConnectorV1, P2pNcclConnector, OffloadingConnector, MultiConnector), and K8s deployment patterns.
 
 ```python
-# Separate prefill and decode across GPU pools
+from vllm.config import KVTransferConfig
+
+# Prefill instance
 llm = LLM(
     model="...",
-    enable_disagg_prefill=True,
-    prefill_tp=4,
-    decode_tp=4,
+    tensor_parallel_size=4,
+    kv_transfer_config=KVTransferConfig(
+        kv_connector="NixlConnector",
+        kv_role="kv_producer",
+    ),
 )
 ```
+
+### LMCache (KV Cache Sharing)
+
+Share KV caches across vLLM replicas to avoid redundant prefill computation. See `references/lmcache.md` for configuration, K8s deployment, and CPU offloading.
+
+### Alternative Model Loading (Run:ai Streamer)
+
+Stream model weights directly from S3/local storage with configurable concurrency:
+
+```python
+llm = LLM(
+    model="meta-llama/Llama-3.1-70B-Instruct",
+    load_format="runai_streamer",
+    model_loader_extra_config={
+        "concurrency": 16,              # parallel file read threads / S3 clients
+        "memory_limit": 0,              # CPU memory limit (0 = unlimited)
+    },
+)
+
+# For pre-sharded models (faster multi-GPU loading)
+llm = LLM(
+    model="/path/to/sharded/model",
+    load_format="runai_streamer_sharded",
+    model_loader_extra_config={
+        "concurrency": 16,
+        "distributed": True,            # each GPU loads its own shard
+    },
+)
+```
+
+Supports loading from: local filesystem, S3 (`s3://bucket/path`), and other object stores.
 
 ## Multi-GPU and Multi-Node
 
@@ -417,3 +454,5 @@ See `references/troubleshooting.md` for:
 - [Supported models](https://docs.vllm.ai/en/latest/models/supported_models/)
 - [Engine arguments reference](https://docs.vllm.ai/en/latest/serving/engine_args.html)
 - `references/troubleshooting.md` — common errors and fixes
+- `references/disaggregated-serving.md` — PD separation architecture and connectors
+- `references/lmcache.md` — KV cache sharing and CPU offloading
