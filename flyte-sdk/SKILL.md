@@ -1,346 +1,417 @@
 ---
 name: flyte-sdk
 description: >
-  Write Flyte workflows with Flytekit — the Python SDK for tasks, workflows, launch plans,
-  and data types. Use when: (1) Writing @task and @workflow functions with type annotations,
-  (2) Using Flyte types (FlyteFile, FlyteDirectory, StructuredDataset), (3) Building dynamic
-  workflows or map tasks for parallel execution, (4) Configuring per-task resources (GPU, memory,
-  tolerations), (5) Creating launch plans with schedules and notifications, (6) Setting up
-  ImageSpec for reproducible container builds, (7) Testing workflows locally before cluster
-  registration, (8) Debugging serialization or type mismatch errors.
+  Author ML workflows with Flytekit (Flyte Python SDK). Use when: (1) Writing tasks with
+  @task decorator and configuring resources, images, retries, (2) Building ImageSpec for
+  reproducible container environments, (3) Composing workflows with @workflow and @eager,
+  (4) Using the type system (StructuredDataset, FlyteFile, FlyteDirectory, dataclasses),
+  (5) Configuring dynamic workflows and map_task for fan-out, (6) Creating LaunchPlans with
+  schedules and fixed inputs, (7) Understanding how workflows are serialized, registered,
+  and executed on Kubernetes, (8) Debugging task execution failures.
 ---
 
-# Flytekit SDK
+# Flyte SDK (Flytekit)
 
-Flytekit (`flytekit`) is the Python SDK for authoring Flyte tasks and workflows. Version: **1.16.x**.
+Flytekit is the Python SDK for authoring Flyte workflows. Version: **1.16.x+**.
 
-> **Companion skill**: See `flyte-deployment` for installing and operating Flyte on Kubernetes.
-> This skill covers **writing workflows** with the SDK.
+## How Flyte Executes Your Code
 
-## Core Concepts
+Understanding the execution model is essential for writing correct Flyte code.
 
-### Tasks
+### Compilation vs Execution
 
-Tasks are containerized units of compute — regular Python functions decorated with `@task`:
+Flytekit operates in two modes:
 
-```python
-from flytekit import task
+1. **Compilation mode** — When you `pyflyte register` or `pyflyte package`, flytekit imports your module and traces the `@workflow` function to build a DAG. It does NOT execute task bodies. It serializes everything to Protobuf (TaskTemplate + WorkflowTemplate) and registers them with FlyteAdmin.
 
-@task(cache=True, cache_version="1", retries=3)
-def preprocess(data_path: str, batch_size: int = 32) -> list[dict]:
-    """Tasks must have type-annotated inputs and outputs."""
-    # runs in its own K8s pod on a Flyte cluster
-    ...
-    return processed_records
+2. **Execution mode** — When FlytePropeller schedules a task, it creates a K8s Pod with your container image and runs `pyflyte-execute` as the entrypoint, which deserializes inputs, calls your task function, and serializes outputs.
+
+**Implications:**
+- Code at module level runs during BOTH compilation and execution
+- Code inside `@task` bodies runs ONLY during execution (in a pod)
+- `@workflow` bodies are traced for DAG structure, never executed directly — you can't use Python if/else or loops (use `conditional` or `@dynamic` instead)
+
+### The Kubernetes Execution Path
+
+```
+pyflyte register → FlyteAdmin (stores Protobuf specs)
+                         ↓
+                   FlytePropeller (K8s operator, watches FlyteWorkflow CRDs)
+                         ↓
+                   Creates K8s Pod per task (or delegates to operator plugin)
+                         ↓
+                   Pod runs: pyflyte-execute --task-module my.module --task-name my_task
+                         ↓
+                   Task function executes, outputs written to blob store
+                         ↓
+                   FlytePropeller reads outputs, schedules downstream tasks
 ```
 
-Key `@task` parameters:
+**Plugin types for task execution:**
+- **Container task** (default): Creates a bare K8s Pod
+- **K8s operator plugin**: Delegates to Spark, Ray, MPI, PyTorch operators
+- **Agent plugin**: Calls external services (SageMaker, BigQuery, etc.)
 
-| Parameter | Purpose | Example |
-|-----------|---------|---------|
-| `cache` / `cache_version` | Memoize outputs by inputs | `cache=True, cache_version="2"` |
-| `retries` | Auto-retry on failure | `retries=3` |
-| `timeout` | Max execution time | `timeout=timedelta(hours=2)` |
-| `requests` / `limits` | CPU/memory/GPU resources | See [Resources](#resources) |
-| `container_image` | Custom image | `container_image=gpu_image` |
-| `accelerator` | GPU accelerator type | `accelerator=A100` |
-| `secret_requests` | Mount secrets | `secret_requests=[Secret(group="aws")]` |
-| `interruptible` | Allow spot/preemptible nodes | `interruptible=True` |
+## ImageSpec
 
-### Workflows
+ImageSpec defines the container image for tasks declaratively. Flytekit builds images automatically during registration.
 
-Workflows compose tasks into a DAG. They're compiled at registration time — the body is a **DSL**, not regular Python:
+### ImageSpec Settings
+
+| Setting | Purpose | Example |
+|---|---|---|
+| `name` | Image name | `"my-training-image"` |
+| `base_image` | Base Docker image | `"nvcr.io/nvidia/pytorch:24.01-py3"` |
+| `packages` | pip packages | `["torch==2.5.0", "transformers"]` |
+| `conda_packages` | Conda packages | `["cudatoolkit=12.1"]` |
+| `conda_channels` | Conda channels | `["nvidia", "conda-forge"]` |
+| `apt_packages` | apt-get packages | `["git", "curl"]` |
+| `env` | Environment variables | `{"CUDA_HOME": "/usr/local/cuda"}` |
+| `registry` | Container registry | `"ghcr.io/my-org"` |
+| `python_version` | Python version | `"3.11"` |
+| `pip_index` | Custom PyPI index | `"https://my-pypi.internal/simple"` |
+| `pip_extra_index_url` | Extra index URLs | `["https://download.pytorch.org/whl/cu121"]` |
+| `source_copy_mode` | Copy local source | `CopyFileDetection.ALL` |
+| `commands` | Extra build commands | `["pip install flash-attn --no-build-isolation"]` |
+| `builder` | Image builder | `"default"`, `"envd"`, `"noop"` |
+| `platform` | Target platform | `"linux/amd64"` |
+| `tag_format` | Tag format template | `"{spec_hash}-gpu"` |
+
+### ImageSpec Examples
+
+```python
+from flytekit import ImageSpec, task
+from flytekit.image_spec import CopyFileDetection
+
+# GPU training image
+training_image = ImageSpec(
+    name="training",
+    base_image="nvcr.io/nvidia/pytorch:24.01-py3",
+    packages=[
+        "transformers==4.46.0",
+        "datasets==3.0.0",
+        "accelerate==1.0.0",
+        "wandb",
+    ],
+    pip_extra_index_url=["https://download.pytorch.org/whl/cu121"],
+    apt_packages=["git"],
+    env={"WANDB_PROJECT": "my-project"},
+    registry="ghcr.io/my-org",
+    source_copy_mode=CopyFileDetection.ALL,  # copy local source into image
+)
+
+# Lightweight CPU image for data preprocessing
+preprocess_image = ImageSpec(
+    name="preprocess",
+    packages=["pandas", "pyarrow", "datasets"],
+    registry="ghcr.io/my-org",
+)
+
+@task(container_image=training_image)
+def train_model(config: dict) -> str:
+    ...
+
+@task(container_image=preprocess_image)
+def preprocess_data(path: str) -> str:
+    ...
+```
+
+### ImageSpec with is_container()
+
+Avoid importing heavy dependencies at module level:
+
+```python
+training_image = ImageSpec(packages=["torch", "transformers"], ...)
+
+if training_image.is_container():
+    import torch
+    from transformers import AutoModelForCausalLM
+
+@task(container_image=training_image)
+def train(model_name: str) -> float:
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    ...
+```
+
+`is_container()` returns `True` only when running inside the built image — prevents import errors during compilation on your laptop.
+
+### Builder Backends
+
+| Builder | Description | When to Use |
+|---|---|---|
+| `default` | Docker build | Standard, requires Docker daemon |
+| `envd` | envd builder | Faster caching, parallel builds |
+| `noop` | Skip building | Pre-built images, CI/CD handles builds |
+
+## Tasks
+
+### @task Decorator Settings
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `container_image` | ImageSpec or image string | Default flytekit image |
+| `requests` | Resource requests | None |
+| `limits` | Resource limits | None |
+| `retries` | Max retry count | `0` |
+| `timeout` | Task timeout | None |
+| `cache` | Enable output caching | `False` |
+| `cache_version` | Cache version string | `""` |
+| `cache_serialize` | Serialize cache access | `False` |
+| `interruptible` | Can run on preemptible nodes | None |
+| `environment` | Extra env vars | `{}` |
+| `secret_requests` | Secrets to mount | `[]` |
+| `pod_template` | Custom PodTemplate | None |
+| `accelerator` | GPU accelerator type | None |
+| `task_config` | Plugin config (Spark, Ray, etc.) | None |
+
+### Resource Configuration
+
+```python
+from flytekit import task, Resources
+
+@task(
+    requests=Resources(cpu="4", mem="16Gi", gpu="1", ephemeral_storage="50Gi"),
+    limits=Resources(cpu="8", mem="32Gi", gpu="1"),
+    accelerator=GPUAccelerator("nvidia-tesla-a100"),
+    timeout=timedelta(hours=12),
+    retries=2,
+    interruptible=True,  # allow scheduling on spot/preemptible nodes
+)
+def train_model(data_path: str) -> float:
+    ...
+```
+
+### Retries and Interruptibility
+
+```python
+@task(
+    retries=3,                    # total attempts = retries + 1 on user errors
+    interruptible=True,           # retries on preemption don't count against retries budget
+)
+def training_task(config: dict) -> float:
+    ...
+```
+
+- `retries` handles user-code failures (exceptions)
+- `interruptible=True` retries on node preemption separately (configured cluster-wide)
+- System errors (OOM killed, node failure) have separate retry budgets
+
+### PodTemplate for Advanced Pod Config
+
+```python
+from flytekit import task, PodTemplate
+from kubernetes.client import V1PodSpec, V1Container, V1VolumeMount, V1Volume, V1EmptyDirVolumeSource
+
+custom_pod = PodTemplate(
+    pod_spec=V1PodSpec(
+        containers=[
+            V1Container(
+                name="primary",
+                volume_mounts=[
+                    V1VolumeMount(name="shm", mount_path="/dev/shm"),
+                    V1VolumeMount(name="data", mount_path="/data"),
+                ],
+            ),
+        ],
+        volumes=[
+            V1Volume(name="shm", empty_dir=V1EmptyDirVolumeSource(medium="Memory", size_limit="16Gi")),
+            V1Volume(name="data", persistent_volume_claim={"claimName": "training-data"}),
+        ],
+        node_selector={"nvidia.com/gpu.product": "NVIDIA-A100-SXM4-80GB"},
+    ),
+)
+
+@task(pod_template=custom_pod, requests=Resources(gpu="1"))
+def gpu_training(config: dict) -> str:
+    ...
+```
+
+## Type System
+
+Flyte's type system enables data passing between tasks with automatic serialization.
+
+| Type | Purpose | Backed By |
+|---|---|---|
+| `int`, `float`, `str`, `bool` | Primitives | Protobuf literals |
+| `list[T]`, `dict[str, T]` | Collections | Protobuf |
+| `FlyteFile` | Single file | Blob store (S3/GCS) |
+| `FlyteDirectory` | Directory of files | Blob store prefix |
+| `StructuredDataset` | Typed tabular data | Parquet in blob store |
+| `@dataclass` | Structured records | Protobuf Struct |
+| `Annotated[T, ...]` | Type with metadata | Depends on T |
+| `Enum` | Enumerated values | Protobuf |
+
+### StructuredDataset (for large data)
+
+```python
+from flytekit.types.structured import StructuredDataset
+import pandas as pd
+
+@task
+def generate_data() -> StructuredDataset:
+    df = pd.DataFrame({"col": [1, 2, 3]})
+    return StructuredDataset(dataframe=df)
+
+@task
+def consume_data(ds: StructuredDataset) -> float:
+    df = ds.open(pd.DataFrame).all()  # reads from blob store
+    return df["col"].mean()
+```
+
+### FlyteFile and FlyteDirectory
+
+```python
+from flytekit.types.file import FlyteFile
+from flytekit.types.directory import FlyteDirectory
+
+@task
+def train(data_dir: FlyteDirectory, config: FlyteFile) -> FlyteFile:
+    # data_dir and config are automatically downloaded to local paths
+    local_data = data_dir.download()
+    model_path = "/tmp/model.pt"
+    torch.save(model.state_dict(), model_path)
+    return FlyteFile(model_path)  # automatically uploaded to blob store
+```
+
+## Workflows
+
+### @workflow — Static DAG
 
 ```python
 from flytekit import workflow
 
 @workflow
-def training_pipeline(data_path: str, epochs: int = 10) -> float:
-    prepared = preprocess(data_path=data_path)
-    model = train_model(data=prepared, epochs=epochs)
-    return evaluate(model=model)
+def training_pipeline(model_name: str, data_path: str) -> float:
+    processed = preprocess_data(path=data_path)
+    model = train_model(data_path=processed)
+    metrics = evaluate_model(model=model)
+    return metrics
 ```
 
-**Critical rules for workflow bodies:**
-- Task outputs are **promises** (placeholders), not actual values
-- You **cannot** use `if/else` on promises — use `flytekit.conditional` instead
-- No `print()`, `len()`, or attribute access on promises
-- Only pass promises to other tasks/workflows
-- Use `>>` operator for ordering without data dependencies: `task_a() >> task_b()`
-
-### Workflow Conditionals
+**Constraints:** No Python if/else, loops, or side effects. Use `conditional` for branching:
 
 ```python
 from flytekit import conditional
 
 @workflow
-def conditional_wf(x: float) -> float:
+def pipeline(data_path: str, use_large_model: bool) -> float:
     return (
-        conditional("check_threshold")
-        .if_(x > 0.9, then=deploy_model(score=x))
-        .else_(retrain_model(score=x))
+        conditional("model_size")
+        .if_(use_large_model.is_true())
+        .then(train_large(data_path=data_path))
+        .else_()
+        .then(train_small(data_path=data_path))
     )
 ```
 
-## Type System
+### @dynamic — Runtime DAG Construction
 
-Flyte has its own type system that maps to/from Python types. All task I/O must use supported types.
-
-### Primitive Types
-
-`int`, `float`, `str`, `bool`, `datetime.datetime`, `datetime.timedelta`, `bytes`
-
-### Collection Types
-
-`list[T]`, `dict[str, T]`, `typing.Optional[T]`
-
-### Structured Types
-
-```python
-from dataclasses import dataclass
-from flytekit.types.file import FlyteFile
-from flytekit.types.directory import FlyteDirectory
-from flytekit.types.structured import StructuredDataset
-
-@dataclass
-class TrainingConfig:
-    learning_rate: float = 1e-4
-    batch_size: int = 32
-    model_name: str = "bert-base-uncased"
-
-@task
-def train(config: TrainingConfig, dataset: FlyteFile) -> FlyteDirectory:
-    """
-    FlyteFile: references a single file (local or remote, e.g. s3://).
-    FlyteDirectory: references a directory of files.
-    Both auto-handle upload/download between tasks.
-    """
-    local_path = dataset.download()
-    output_dir = FlyteDirectory.new_remote()
-    # ... training logic ...
-    return FlyteDirectory(path="/tmp/model_output")
-
-@task
-def load_data(uri: str) -> StructuredDataset:
-    """StructuredDataset: typed columnar data (parquet, Arrow, etc.)."""
-    import pandas as pd
-    df = pd.read_parquet(uri)
-    return StructuredDataset(dataframe=df)
-```
-
-**FlyteFile with format hints:**
-```python
-from flytekit.types.file import FlyteFile
-
-# Typed file references
-csv_file: FlyteFile[typing.TypeVar("csv")]
-onnx_model: FlyteFile[typing.TypeVar("onnx")]
-```
-
-### Enum Types
-
-```python
-import enum
-
-class ModelArch(enum.Enum):
-    BERT = "bert"
-    GPT = "gpt"
-    LLAMA = "llama"
-
-@task
-def select_model(arch: ModelArch) -> str:
-    return arch.value
-```
-
-## Resources
-
-Configure per-task compute resources:
-
-```python
-from flytekit import Resources
-from flytekit.extras.accelerators import A100, T4, GPUAccelerator
-
-@task(
-    requests=Resources(cpu="4", mem="16Gi", gpu="1", ephemeral_storage="50Gi"),
-    limits=Resources(cpu="8", mem="32Gi", gpu="1", ephemeral_storage="100Gi"),
-    accelerator=A100,  # or T4, L4, GPUAccelerator("nvidia-a100-80gb")
-)
-def train_on_gpu(data: FlyteFile) -> FlyteDirectory:
-    import torch
-    assert torch.cuda.is_available()
-    ...
-```
-
-**Pod-level configuration with tolerations and node selectors:**
-
-```python
-from flytekit import task, PodTemplate
-from kubernetes.client import V1PodSpec, V1Container, V1Toleration
-
-gpu_pod = PodTemplate(
-    pod_spec=V1PodSpec(
-        tolerations=[
-            V1Toleration(
-                key="nvidia.com/gpu",
-                operator="Exists",
-                effect="NoSchedule",
-            )
-        ],
-        node_selector={"gpu-type": "a100"},
-        containers=[V1Container(name="primary")],
-    )
-)
-
-@task(pod_template=gpu_pod, requests=Resources(gpu="1"))
-def gpu_task() -> None:
-    ...
-```
-
-## ImageSpec — Reproducible Environments
-
-`ImageSpec` builds container images without writing Dockerfiles:
-
-```python
-from flytekit import ImageSpec, task
-
-gpu_image = ImageSpec(
-    name="ml-training",
-    base_image="nvcr.io/nvidia/pytorch:24.01-py3",
-    packages=[
-        "transformers==4.44.0",
-        "datasets==3.0.0",
-        "accelerate==0.34.0",
-    ],
-    conda_packages=["cudatoolkit=12.1"],
-    registry="ghcr.io/myorg",
-    python_version="3.11",
-)
-
-# Guard imports that only exist inside the custom image
-if gpu_image.is_container():
-    from transformers import AutoModelForCausalLM
-
-@task(container_image=gpu_image, requests=Resources(gpu="1"))
-def fine_tune(model_name: str) -> FlyteDirectory:
-    model = AutoModelForCausalLM.from_pretrained(model_name)
-    ...
-```
-
-**Key `ImageSpec` fields:**
-
-| Field | Purpose |
-|-------|---------|
-| `base_image` | Starting image (NGC, Docker Hub, etc.) |
-| `packages` | pip packages to install |
-| `conda_packages` | conda packages |
-| `apt_packages` | System packages via apt |
-| `registry` | Container registry to push to |
-| `python_version` | Python version override |
-| `source_root` | Copy local source code into image |
-| `commands` | Arbitrary RUN commands |
-| `pip_extra_index_url` | Additional PyPI indexes |
-
-## Dynamic Workflows and Map Tasks
-
-### Dynamic Workflows
-
-`@dynamic` creates the DAG at **runtime** — use when the structure depends on data:
+Dynamic workflows execute Python at runtime to build a DAG. Runs in a pod:
 
 ```python
 from flytekit import dynamic
 
-@dynamic(container_image=gpu_image)
-def hyperparameter_search(
-    configs: list[TrainingConfig],
-) -> list[float]:
+@dynamic
+def hyperparameter_search(configs: list[dict]) -> list[float]:
     results = []
-    for cfg in configs:
-        score = train_and_eval(config=cfg)
-        results.append(score)
+    for config in configs:  # Python loops work here
+        result = train_model(config=config)
+        results.append(result)
     return results
 ```
 
-### Map Tasks
+### @eager — Full Python Control (Experimental)
 
-`map_task` runs the same task over a list of inputs **in parallel**:
+Eager workflows run Python with full control flow, executing tasks as they're called:
+
+```python
+from flytekit.experimental import eager
+
+@eager
+async def adaptive_training(model_name: str) -> float:
+    metrics = await initial_train(model_name=model_name)
+    if metrics < 0.9:  # real Python if/else
+        metrics = await extended_train(model_name=model_name)
+    return metrics
+```
+
+### map_task — Parallel Fan-Out
 
 ```python
 from flytekit import map_task
-
-@task
-def train_single(config: TrainingConfig) -> float:
-    ...
 
 @workflow
-def parallel_training(configs: list[TrainingConfig]) -> list[float]:
-    return map_task(train_single)(config=configs)
+def parallel_eval(models: list[str]) -> list[float]:
+    return map_task(evaluate_model)(model_path=models)
 ```
 
-**Map task with concurrency limit:**
-```python
-from flytekit import map_task
+`map_task` creates a K8s array task — each element runs as a separate pod.
 
-# Max 4 parallel pods (e.g., limited GPU quota)
-map_task(train_single, concurrency=4)(config=configs)
-```
+## LaunchPlans
 
-## Launch Plans
-
-Launch plans bind default inputs and optionally add schedules:
+LaunchPlans are named, versioned configurations for executing workflows:
 
 ```python
-from flytekit import LaunchPlan, CronSchedule, FixedRate
-from datetime import timedelta
+from flytekit import LaunchPlan, CronSchedule, FixedInputs
 
-# Default inputs
-nightly_plan = LaunchPlan.get_or_create(
-    workflow=training_pipeline,
-    name="nightly_retrain",
-    default_inputs={"data_path": "s3://data/latest", "epochs": 5},
+# Scheduled execution
+nightly_train = LaunchPlan.get_or_create(
+    training_pipeline,
+    name="nightly-training",
+    schedule=CronSchedule(schedule="0 2 * * *"),  # 2 AM daily
+    fixed_inputs={"model_name": "llama-8b"},
+    default_inputs={"data_path": "/data/latest"},
+    max_parallelism=10,
+    labels={"team": "ml"},
 )
 
-# Cron schedule
-scheduled_plan = LaunchPlan.get_or_create(
-    workflow=training_pipeline,
-    name="scheduled_retrain",
-    default_inputs={"data_path": "s3://data/latest", "epochs": 5},
-    schedule=CronSchedule(schedule="0 2 * * *", kickoff_time_input_arg=None),
-)
-
-# Fixed-rate schedule
-hourly_plan = LaunchPlan.get_or_create(
-    workflow=training_pipeline,
-    name="hourly_eval",
-    default_inputs={"data_path": "s3://data/latest", "epochs": 1},
-    schedule=FixedRate(duration=timedelta(hours=1)),
+# Fixed config for production
+prod_launch = LaunchPlan.get_or_create(
+    training_pipeline,
+    name="prod-training",
+    fixed_inputs={"model_name": "llama-70b", "data_path": "/data/prod"},
 )
 ```
 
-**Launch plan notifications:**
-```python
-from flytekit import Email, Slack
-from flytekit.models.core.execution import WorkflowExecutionPhase
+### LaunchPlan Settings
 
-notified_plan = LaunchPlan.get_or_create(
-    workflow=training_pipeline,
-    name="notified_retrain",
-    default_inputs={"data_path": "s3://data/latest"},
-    notifications=[
-        Email(
-            phases=[WorkflowExecutionPhase.FAILED],
-            recipients_email=["team@example.com"],
-        ),
-        Slack(
-            phases=[WorkflowExecutionPhase.SUCCEEDED],
-            recipients_email=["#ml-alerts"],  # Slack channel
-        ),
+| Setting | Purpose |
+|---|---|
+| `schedule` | CronSchedule or FixedRate |
+| `fixed_inputs` | Inputs locked at registration |
+| `default_inputs` | Defaults that can be overridden |
+| `max_parallelism` | Max concurrent task executions |
+| `labels` | K8s labels for the execution |
+| `annotations` | K8s annotations |
+| `notifications` | Email/Slack on completion/failure |
+| `raw_output_data_config` | Override output blob store location |
+
+## Secrets
+
+```python
+from flytekit import task, Secret
+
+@task(
+    secret_requests=[
+        Secret(group="wandb", key="api_key", mount_requirement=Secret.MountType.ENV_VAR),
+        Secret(group="hf", key="token"),
     ],
 )
+def train_with_secrets(config: dict) -> str:
+    import os
+    wandb_key = os.environ["WANDB_API_KEY"]  # ENV_VAR mount
+    # or: flytekit.current_context().secrets.get("wandb", "api_key")
+    ...
+```
+
+Secrets are backed by K8s Secrets in the Flyte namespace. Create them with:
+```
+kubectl create secret generic wandb --from-literal=api_key=<key> -n <flyte-ns>
 ```
 
 ## Intra-Task Checkpointing
 
-For long-running tasks that should resume after failures:
+For long-running tasks, checkpoint progress for fault tolerance:
 
 ```python
 from flytekit import task, current_context
@@ -350,154 +421,57 @@ def long_training(epochs: int) -> float:
     ctx = current_context()
     checkpoint = ctx.checkpoint
 
-    # Try to restore from previous attempt
+    # Try to restore
     prev = checkpoint.read()
     start_epoch = 0
     if prev:
-        state = deserialize(prev)
-        start_epoch = state["epoch"]
-        model.load_state_dict(state["weights"])
+        state = pickle.loads(prev)
+        model.load_state_dict(state["model"])
+        start_epoch = state["epoch"] + 1
 
     for epoch in range(start_epoch, epochs):
-        loss = train_one_epoch(model, epoch)
-        # Checkpoint periodically
-        checkpoint.write(serialize({"epoch": epoch + 1, "weights": model.state_dict()}))
+        train_one_epoch(model)
+        checkpoint.write(pickle.dumps({"model": model.state_dict(), "epoch": epoch}))
 
-    return loss
+    return evaluate(model)
 ```
 
 ## Local Testing
 
-Always test locally before registering:
+```python
+# Tasks are regular Python functions locally
+result = train_model(config={"lr": 1e-4})
+
+# Workflows too
+metrics = training_pipeline(model_name="test", data_path="/local/data")
+```
+
+No cluster needed. Types are resolved locally (FlyteFile → local path, etc.).
+
+## Registration and Packaging
 
 ```bash
-# Run a single task
-pyflyte run my_workflows.py preprocess --data_path /tmp/data --batch_size 16
+# Register all workflows/tasks in current directory to Flyte cluster
+# Run as a CI/CD step or Job — not interactively
+# pyflyte register --project my-project --domain development .
 
-# Run a full workflow
-pyflyte run my_workflows.py training_pipeline --data_path /tmp/data --epochs 2
-
-# Run from a remote file
-pyflyte run --remote my_workflows.py training_pipeline --data_path s3://bucket/data
-
-# Register all workflows in a package
-pyflyte register --project my_project --domain development ./workflows/
-
-# Serialize without registering (for CI)
-pyflyte serialize workflows/ -o /tmp/output
-```
-
-**Local execution bypasses the Flyte cluster** — tasks run as regular Python functions in your process. This means:
-- `Resources`, `accelerator`, and `pod_template` are ignored locally
-- `FlyteFile`/`FlyteDirectory` work with local paths
-- `cache` still works (uses local SQLite)
-
-## Secrets
-
-```python
-from flytekit import task, Secret
-
-@task(
-    secret_requests=[
-        Secret(group="aws", key="access_key"),
-        Secret(group="aws", key="secret_key"),
-    ]
-)
-def download_from_s3(bucket: str) -> FlyteFile:
-    ctx = current_context()
-    access_key = ctx.secrets.get("aws", "access_key")
-    secret_key = ctx.secrets.get("aws", "secret_key")
-    ...
-```
-
-## Common Patterns
-
-### ML Training Pipeline (End-to-End)
-
-```python
-from flytekit import task, workflow, Resources, ImageSpec
-from flytekit.types.file import FlyteFile
-from flytekit.types.directory import FlyteDirectory
-from flytekit.extras.accelerators import A100
-from dataclasses import dataclass
-
-gpu_image = ImageSpec(
-    base_image="nvcr.io/nvidia/pytorch:24.01-py3",
-    packages=["transformers", "datasets", "wandb"],
-    registry="ghcr.io/myorg",
-)
-
-@dataclass
-class TrainConfig:
-    model_name: str = "meta-llama/Llama-3.1-8B"
-    learning_rate: float = 2e-5
-    epochs: int = 3
-    batch_size: int = 4
-
-@task(container_image=gpu_image, requests=Resources(cpu="4", mem="16Gi"))
-def prepare_data(dataset_name: str) -> FlyteDirectory:
-    from datasets import load_dataset
-    ds = load_dataset(dataset_name)
-    ds.save_to_disk("/tmp/prepared")
-    return FlyteDirectory(path="/tmp/prepared")
-
-@task(
-    container_image=gpu_image,
-    requests=Resources(cpu="8", mem="64Gi", gpu="1"),
-    accelerator=A100,
-    timeout=timedelta(hours=6),
-    interruptible=True,
-)
-def fine_tune(config: TrainConfig, data_dir: FlyteDirectory) -> FlyteDirectory:
-    from transformers import Trainer, TrainingArguments
-    local_data = data_dir.download()
-    # ... set up trainer ...
-    trainer.train()
-    trainer.save_model("/tmp/model")
-    return FlyteDirectory(path="/tmp/model")
-
-@task(container_image=gpu_image, requests=Resources(cpu="4", mem="16Gi", gpu="1"))
-def evaluate(model_dir: FlyteDirectory) -> float:
-    # ... load model, run eval ...
-    return accuracy
-
-@workflow
-def llm_finetune_pipeline(
-    dataset_name: str = "tatsu-lab/alpaca",
-    config: TrainConfig = TrainConfig(),
-) -> float:
-    data = prepare_data(dataset_name=dataset_name)
-    model = fine_tune(config=config, data_dir=data)
-    return evaluate(model_dir=model)
-```
-
-### Branching with Conditionals
-
-```python
-from flytekit import conditional
-
-@workflow
-def deploy_or_retrain(dataset: str) -> str:
-    score = llm_finetune_pipeline(dataset_name=dataset)
-    return (
-        conditional("quality_gate")
-        .if_(score >= 0.85, then=deploy_model(score=score))
-        .else_(notify_team(score=score))
-    )
+# Package to a tarball (for offline registration)
+# pyflyte package --image ghcr.io/my-org/training:latest -o workflows.tgz
 ```
 
 ## Debugging
 
 See `references/troubleshooting.md` for:
-- Serialization errors and type mismatches
-- Import errors with ImageSpec
-- Promise-related mistakes in workflows
-- Registration and execution failures
-- Common `pyflyte` CLI issues
+- Serialization errors during registration
+- Pod failures and resource issues
+- Type mismatch errors
+- ImageSpec build failures
+- Checkpoint and caching issues
 
 ## Reference
 
-- [Flytekit API docs](https://docs.flyte.org/projects/flytekit/en/latest/)
+- [Flytekit API docs](https://docs.flyte.org/en/latest/api/flytekit/)
 - [Flytekit GitHub](https://github.com/flyteorg/flytekit)
-- [Flyte user guide (legacy)](https://docs-legacy.flyte.org/en/latest/user_guide/index.html)
+- [Flyte user guide](https://docs.flyte.org/en/latest/user_guide/)
+- [FlytePropeller architecture](https://docs-legacy.flyte.org/en/latest/user_guide/concepts/component_architecture/flytepropeller_architecture.html)
 - `references/troubleshooting.md` — common errors and fixes
