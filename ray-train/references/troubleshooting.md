@@ -4,42 +4,25 @@ Common issues when running distributed training with Ray Train.
 
 ## Table of Contents
 
-- [NCCL errors](#nccl-errors)
+- [Communication errors](#communication-errors)
 - [OOM errors](#oom-errors)
 - [Slow data loading](#slow-data-loading)
 - [Checkpoint issues](#checkpoint-issues)
 - [Rank mismatches and hangs](#rank-mismatches-and-hangs)
 - [Common error patterns](#common-error-patterns)
 
-## NCCL Errors
+## Communication Errors
 
-NCCL is the GPU communication library. Errors usually indicate network or configuration issues.
-
-### "NCCL error: unhandled system error" / "NCCL timeout"
-
-```bash
-# Check NCCL connectivity
-NCCL_DEBUG=INFO python -c "import torch.distributed; ..."
-```
-
-**Common causes:**
-1. **Firewall blocking ports** — NCCL uses high ports for GPU-to-GPU communication. Ensure ports are open between nodes.
-2. **Network interface mismatch** — Set the correct interface:
-   ```bash
-   export NCCL_SOCKET_IFNAME=eth0  # or your network interface
-   ```
-3. **InfiniBand issues** — If not using IB, disable it:
-   ```bash
-   export NCCL_IB_DISABLE=1
-   ```
-4. **Timeout too short** — Increase for large models:
-   ```bash
-   export NCCL_TIMEOUT=1800  # 30 minutes
-   ```
-
-### "NCCL error: invalid usage"
+### Collective operation failures
 
 Usually means a collective operation was called with mismatched arguments across ranks. Check that all workers execute the same code path.
+
+### Timeout errors
+
+Common causes:
+1. **Firewall blocking ports** — GPU communication uses high ports. Ensure ports are open between nodes.
+2. **All workers must reach the same collective** — mismatched code paths cause hangs.
+3. **Increase timeout for large models** — set `timeout` in `TorchConfig(timeout=1800)`.
 
 ## OOM Errors
 
@@ -142,7 +125,7 @@ Model and data on different devices. This shouldn't happen if using `prepare_mod
 
 | Error | Cause | Fix |
 |---|---|---|
-| `NCCL timeout` | Network issue between nodes | Check firewall, set `NCCL_SOCKET_IFNAME` |
+| Communication timeout | Network issue between nodes | Check firewall, ensure ports open |
 | `CUDA out of memory` | Batch too large or model too large | Reduce batch, use ZeRO/FSDP, mixed precision |
 | `Storage path must be specified` | Multi-node without shared storage | Set `RunConfig(storage_path=...)` |
 | `No module named 'ray.train.huggingface'` | Missing install | `pip install "ray[train]" transformers` |

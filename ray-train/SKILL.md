@@ -9,7 +9,7 @@ description: >
   (5) Using DeepSpeed or FSDP for large model training (ZeRO stages, sharding),
   (6) Feeding data from Ray Data into training (streaming datasets),
   (7) Running hyperparameter tuning with Ray Tune,
-  (8) Debugging training issues (NCCL errors, OOM, slow data loading, rank mismatches).
+  (8) Debugging training issues (communication errors, OOM, slow data loading, rank mismatches).
 ---
 
 # Ray Train
@@ -363,4 +363,4 @@ Ray Train handles `MASTER_ADDR`, `MASTER_PORT`, `WORLD_SIZE`, `RANK`, and `LOCAL
 
 ## Debugging
 
-For NCCL errors, OOM, slow data loading, and common training issues, see `references/troubleshooting.md`.
+For communication errors, OOM, slow data loading, and common training issues, see `references/troubleshooting.md`.
