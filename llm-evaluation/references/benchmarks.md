@@ -1,98 +1,135 @@
 # LLM Benchmark Reference
 
-## Benchmark Details
+Detailed descriptions, scoring baselines, and gotchas for common LLM benchmarks.
+
+## Knowledge Benchmarks
 
 ### MMLU (Massive Multitask Language Understanding)
 
-- **Task**: `mmlu` | **Format**: 4-choice MC | **Size**: ~14,000 questions across 57 subjects
-- **Default shots**: 5 | **Metric**: `acc`
-- **Baselines**: Random = 25%, Llama-3.1-8B ~65%, GPT-4 ~86%
+- **Tasks:** 57 subjects (STEM, humanities, social science, other)
+- **Format:** 4-choice multiple choice
+- **Standard:** 5-shot
+- **Metric:** accuracy
+- **Baselines:** Random = 25%, GPT-4o ≈ 88%, Llama 3.1 70B ≈ 83%
+- **Gotchas:** Formatting sensitive — ensure answer extraction parses "A", "B", "C", "D" correctly. Some tasks are noisy or mislabeled.
 
-```bash
-lm_eval --tasks mmlu --num_fewshot 5
-# Specific subjects:
-lm_eval --tasks mmlu_abstract_algebra,mmlu_computer_security
-```
+### MMLU-Pro
 
-### GSM8K (Grade School Math 8K)
-
-- **Task**: `gsm8k` | **Format**: Open-ended (chain-of-thought extraction)
-- **Size**: 1,319 test problems | **Default shots**: 5
-- **Metric**: `exact_match` (strict-match and flexible-extract)
-- **Baselines**: Llama-3.1-8B ~56%, GPT-4 ~95%
-
-```bash
-lm_eval --tasks gsm8k --num_fewshot 5
-# With chain-of-thought:
-lm_eval --tasks gsm8k_cot --num_fewshot 8
-```
-
-### HumanEval
-
-- **Task**: `humaneval` | **Format**: Python code generation with test cases
-- **Size**: 164 problems | **Metric**: `pass@1`
-- **Baselines**: Llama-3.1-8B ~33%, GPT-4 ~87%
-- **Note**: Requires code execution — use sandboxed environments
-
-### HellaSwag
-
-- **Task**: `hellaswag` | **Format**: 4-choice MC (commonsense completion)
-- **Size**: 10,042 test | **Default shots**: 10 | **Metric**: `acc_norm`
-- **Baselines**: Llama-3.1-8B ~79%, GPT-4 ~95%
+- **Tasks:** MMLU subset with harder questions, 10 answer choices
+- **Standard:** 5-shot, CoT (chain of thought) prompted
+- **Metric:** accuracy
+- **Baselines:** GPT-4o ≈ 73%, random = 10%
+- **Gotchas:** Much harder than MMLU. Requires CoT for good performance.
 
 ### TruthfulQA
 
-- **Task**: `truthfulqa_mc2` | **Format**: Multiple choice (weighted multi-correct)
-- **Size**: 817 questions | **Default shots**: 0 | **Metric**: `acc`
-- **Note**: MC2 (weighted) is preferred over MC1 (single correct)
+- **Tasks:** 817 questions designed to trigger common misconceptions
+- **Format:** Multiple choice (mc2 variant)
+- **Standard:** 0-shot
+- **Metric:** mc2 (weighted accuracy across true/false answers)
+- **Baselines:** GPT-4 ≈ 60%, humans ≈ 94%
+- **Gotchas:** Models trained on internet data perform worse (learned misconceptions).
 
-### ARC (AI2 Reasoning Challenge)
+## Reasoning Benchmarks
 
-- **Task**: `arc_challenge` (hard) / `arc_easy`
-- **Format**: 4-choice MC | **Default shots**: 25 | **Metric**: `acc_norm`
+### HellaSwag
+
+- **Tasks:** Commonsense sentence completion
+- **Format:** 4-choice
+- **Standard:** 10-shot
+- **Metric:** acc_norm (length-normalized)
+- **Baselines:** GPT-4 ≈ 95%, Llama 3.1 8B ≈ 82%
+- **Gotchas:** Near-saturated for large models. Use acc_norm (not acc).
+
+### ARC-Challenge
+
+- **Tasks:** Grade-school science (challenge subset)
+- **Format:** 4-5 choice
+- **Standard:** 25-shot
+- **Metric:** acc_norm
+- **Baselines:** GPT-4 ≈ 96%, Llama 3.1 8B ≈ 79%
 
 ### Winogrande
 
-- **Task**: `winogrande` | **Format**: Binary choice (fill-in-the-blank)
-- **Default shots**: 5 | **Metric**: `acc`
+- **Tasks:** Coreference resolution
+- **Format:** 2-choice
+- **Standard:** 5-shot
+- **Metric:** accuracy
+- **Baselines:** GPT-4 ≈ 87%, humans ≈ 94%
 
-## Open LLM Leaderboard v2
+### BBH (Big Bench Hard)
 
-| Benchmark | Task | Shots | Metric |
-|-----------|------|-------|--------|
-| MMLU-Pro | `mmlu_pro` | 5 | acc |
-| GPQA | `gpqa_main_zeroshot` | 0 | acc_norm |
-| MuSR | `musr` | 0 | acc_norm |
-| MATH (Hard) | `minerva_math_hard` | 4 | exact_match |
-| IFEval | `ifeval` | 0 | inst_level_strict_acc |
-| BBH | `bbh` | 3 | acc_norm |
+- **Tasks:** 23 challenging BIG-Bench tasks
+- **Standard:** 3-shot CoT
+- **Metric:** accuracy
+- **Gotchas:** Requires CoT prompting to show benefit.
 
-## Choosing Benchmarks by Use Case
+## Math Benchmarks
 
-| Use Case | Recommended |
-|----------|-------------|
-| General capability | MMLU, HellaSwag, ARC, TruthfulQA |
-| Math/reasoning | GSM8K, MATH, ARC-Challenge |
-| Coding | HumanEval, MBPP |
-| Instruction following | IFEval, MT-Bench (separate tool) |
-| Safety | TruthfulQA, BBQ |
-| Domain-specific | Custom tasks (see SKILL.md) |
+### GSM8K
 
-## Interpreting Results
+- **Tasks:** 1,319 grade-school math word problems (multi-step)
+- **Standard:** 5-shot CoT (or 8-shot)
+- **Metric:** exact_match (final numeric answer)
+- **Baselines:** GPT-4o ≈ 95%, Llama 3.1 8B ≈ 56%
+- **Gotchas:** Answer extraction is critical — must parse final number. Use `exact_match,strict-match` or `exact_match,flexible-extract`.
 
-### Standard Error
+### MATH (Minerva)
 
-Always check `_stderr` — a 0.5% difference with ±0.4% stderr is not significant:
+- **Tasks:** Competition math (AMC, AIME level)
+- **Standard:** 4-shot
+- **Metric:** exact_match
+- **Baselines:** GPT-4 ≈ 52%, Llama 3.1 70B ≈ 42%
+- **Gotchas:** Much harder than GSM8K. Requires LaTeX parsing for equivalence.
+
+## Code Benchmarks
+
+### HumanEval
+
+- **Tasks:** 164 Python coding problems
+- **Standard:** 0-shot (generate function body)
+- **Metric:** pass@1 (functional correctness via test execution)
+- **Baselines:** GPT-4 ≈ 87%, Code Llama 34B ≈ 48%
+- **Gotchas:** Requires code execution sandbox. Temperature=0.0 for pass@1, temperature=0.8 for pass@10/100.
+
+### MBPP (Mostly Basic Python Problems)
+
+- **Tasks:** 974 short Python problems
+- **Standard:** 3-shot
+- **Metric:** pass@1
+- **Baselines:** GPT-4 ≈ 83%
+
+## Instruction Following
+
+### IFEval
+
+- **Tasks:** Verifiable instruction-following (e.g., "write exactly 3 paragraphs")
+- **Standard:** 0-shot
+- **Metric:** strict accuracy + loose accuracy
+- **Baselines:** GPT-4 ≈ 87%, Llama 3.1 70B ≈ 83%
+- **Gotchas:** Requires programmatic verification (built into lm-eval).
+
+## Open LLM Leaderboard v2 Tasks
+
+The HuggingFace Open LLM Leaderboard v2 uses:
+1. **MMLU-Pro** (knowledge)
+2. **GPQA** (graduate-level QA)
+3. **MuSR** (multi-step reasoning)
+4. **MATH-Hard** (competition math)
+5. **IFEval** (instruction following)
+6. **BBH** (hard reasoning)
+
+```bash
+lm_eval --tasks mmlu_pro,gpqa_main_zeroshot,musr,minerva_math_hard,ifeval,bbh \
+  --model vllm --model_args pretrained=my-model \
+  --batch_size auto --output_path ./leaderboard_results
 ```
-mmlu: acc = 0.654 ± 0.004
-```
 
-### Contamination
+## Scoring Pitfalls
 
-Models trained on benchmark data show inflated scores. Red flags:
-- Suspiciously high on specific benchmarks vs peers
-- Much higher than similar-sized models
-
-### Normalized vs Raw Accuracy
-
-`acc_norm` (length-normalized) is fairer for MC — prevents favoring shorter answers. Use `acc_norm` when available.
+1. **Few-shot count matters** — MMLU 0-shot vs 5-shot can differ by 10+ points
+2. **Normalization** — `acc_norm` vs `acc` can differ significantly on HellaSwag
+3. **Answer parsing** — GSM8K scores vary widely with different extraction regex
+4. **Chat template** — instruction-tuned models need `--apply_chat_template`
+5. **Contamination** — models may have seen benchmark data in training
+6. **Sample limit** — using `--limit` gives noisy estimates; report full evals for papers

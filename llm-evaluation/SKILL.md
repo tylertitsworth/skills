@@ -253,6 +253,69 @@ print(pd.DataFrame(models).T.to_markdown())
 | `f1` | Token-level F1 | SQuAD |
 | `mc2` | Weighted multi-choice accuracy | TruthfulQA |
 
+## Generation-Based Evaluation
+
+For open-ended evaluation (not multiple choice):
+
+```yaml
+# generate_until task
+output_type: generate_until
+generation_kwargs:
+  max_gen_toks: 1024
+  temperature: 0.0
+  stop_sequences: ["\n\nQuestion:", "---"]
+filter_list:
+  - name: get-answer
+    filter:
+      - function: regex
+        regex_pattern: "#### (\\d+)"
+      - function: take_first
+```
+
+## LLM-as-Judge Evaluation
+
+Use a strong model to judge outputs:
+
+```python
+# Simple LLM-as-judge pattern
+import openai
+
+def judge_output(prompt, response, reference):
+    judge_prompt = f"""Rate the following response on a scale of 1-5.
+Question: {prompt}
+Reference Answer: {reference}
+Model Response: {response}
+Score (1-5):"""
+
+    result = openai.chat.completions.create(
+        model="gpt-4o",
+        messages=[{"role": "user", "content": judge_prompt}],
+        temperature=0.0,
+    )
+    return int(result.choices[0].message.content.strip())
+```
+
+For structured LLM-as-judge, see [MT-Bench](https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge) and [AlpacaEval](https://github.com/tatsu-lab/alpaca_eval).
+
+## Alternative Evaluation Tools
+
+| Tool | Strength | Use Case |
+|---|---|---|
+| **lm-evaluation-harness** | Standard benchmarks, many backends | Model comparison, leaderboard reproduction |
+| **lighteval** | HuggingFace-native, fast | Quick evals, custom tasks |
+| **HELM** | Comprehensive, standardized | Academic evaluation |
+| **Inspect AI** | Agent and tool-use evaluation | Complex agentic tasks |
+| **bigcode-eval-harness** | Code generation | HumanEval, MBPP, MultiPL-E |
+
+### lighteval
+
+```bash
+pip install lighteval
+lighteval accelerate --model_args pretrained=my-model \
+  --tasks "leaderboard|mmlu:5|0,leaderboard|gsm8k|0" \
+  --output_dir ./results
+```
+
 ## Best Practices
 
 1. **Consistent settings** across compared models (same shots, batch size)
