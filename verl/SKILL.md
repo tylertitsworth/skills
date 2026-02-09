@@ -301,6 +301,70 @@ df = pd.DataFrame(data)
 df.to_parquet("train.parquet")
 ```
 
+## Advanced Algorithms
+
+Beyond PPO and GRPO, verl supports:
+
+| Algorithm | Config Key | Description |
+|---|---|---|
+| DAPO | `algorithm.adv_estimator=grpo` + DAPO recipe | Decoupled clip + dynamic sampling |
+| SPIN | Recipe | Self-Play Fine-Tuning |
+| SPPO | Recipe | Self-Play Preference Optimization |
+| OPO | Recipe | On-Policy RL with Optimal Reward Baseline |
+| GPG | Recipe | Group Policy Gradient |
+
+See [verl recipes](https://github.com/verl-project/verl-recipe) for full implementations.
+
+## LoRA Training
+
+```yaml
+actor_rollout_ref:
+  actor:
+    peft:
+      peft_type: lora
+      lora_rank: 16
+      lora_alpha: 32
+      target_modules: ["q_proj", "v_proj", "k_proj", "o_proj"]
+```
+
+## Multi-Turn Rollout
+
+Enable multi-turn conversation training with tool use:
+
+```yaml
+rollout:
+  multi_turn:
+    enable: true
+    max_turns: 5
+    tool_server: "http://tool-server:8080"
+```
+
+## FP8 Rollout
+
+Enable FP8 for faster generation:
+
+```yaml
+rollout:
+  dtype: fp8
+```
+
+## Async Training
+
+verl supports async variants for higher throughput:
+- **One-step off-policy**: Generate with previous policy, train with current
+- **Fully async**: Overlap generation and training completely
+
+## Monitoring
+
+verl logs to WandB by default. Enable Prometheus + Grafana for rollout monitoring:
+
+```yaml
+trainer:
+  prometheus:
+    enable: true
+    port: 9090
+```
+
 ## Debugging
 
 See `references/troubleshooting.md` for:
