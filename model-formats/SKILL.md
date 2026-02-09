@@ -268,3 +268,10 @@ optimization {
 **CPU/Edge Inference**: GGUF with appropriate quantization (Q4_K_M is the common default). Ollama or llama.cpp.
 
 **Archival/Distribution**: SafeTensors on Hugging Face Hub. GGUF alongside for quantized variants.
+
+## Cross-References
+
+- [vllm](../vllm/) — SafeTensors loading, `load_format` configuration
+- [huggingface-transformers](../huggingface-transformers/) — SafeTensors as primary format on HF Hub
+- [ollama](../ollama/) — GGUF model loading and Modelfile configuration
+- [flash-attention](../flash-attention/) — Attention backends used after model loading
