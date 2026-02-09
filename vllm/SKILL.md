@@ -407,7 +407,7 @@ See `references/troubleshooting.md` for:
 - GPU OOM during model loading or inference
 - Slow time-to-first-token (TTFT)
 - Throughput degradation under load
-- Model loading failures and NCCL errors
+- Model loading failures and multi-GPU communication errors
 - LoRA, structured output, speculative decoding, and multimodal issues
 
 ## Reference

@@ -184,39 +184,15 @@ Some models require `trust-remote-code`:
 vllm serve my-custom-model --trust-remote-code
 ```
 
-## NCCL Errors (Multi-GPU)
+## Multi-GPU Communication Errors
 
-### "NCCL error: unhandled system error"
-
-```bash
-# Ensure IPC is shared (Docker)
-docker run --ipc=host ...
-
-# Or in Kubernetes, mount /dev/shm:
-volumes:
-  - name: shm
-    emptyDir:
-      medium: Memory
-      sizeLimit: 8Gi
-```
-
-### "NCCL error: remote process exited"
+### Worker crashed ("remote process exited")
 
 One GPU worker crashed. Check:
 1. GPU memory on all devices: `nvidia-smi`
 2. GPU health: `nvidia-smi -q -d ECC`
 3. Driver version matches across nodes
-
-### Multi-node NCCL issues
-
-```bash
-# Specify the correct network interface
-export NCCL_SOCKET_IFNAME=eth0
-export NCCL_IB_DISABLE=1  # if no InfiniBand
-
-# Increase timeout
-export NCCL_TIMEOUT=600
-```
+4. `/dev/shm` is large enough (mount as emptyDir with `medium: Memory` in K8s)
 
 ## CUDA Graph Issues
 
