@@ -480,6 +480,12 @@ See `references/troubleshooting.md` for:
 - torch.compile graph breaks
 - Common numerical issues
 
+## Cross-References
+
+- [fsdp](../fsdp/) — FSDP for memory-efficient distributed training
+- [megatron-lm](../megatron-lm/) — Megatron-LM for large-scale training
+- [ray-train](../ray-train/) — Ray Train for managed distributed training
+
 ## Reference
 
 - [PyTorch docs](https://pytorch.org/docs/stable/)

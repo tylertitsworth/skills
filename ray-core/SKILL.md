@@ -306,6 +306,13 @@ for ref in gen:
     print(ray.get(ref))
 ```
 
+## Cross-References
+
+- [ray-data](../ray-data/) — Distributed data processing with Ray Data
+- [ray-serve](../ray-serve/) — Model serving with Ray Serve
+- [ray-train](../ray-train/) — Distributed training with Ray Train
+- [kuberay](../kuberay/) — Deploy Ray on Kubernetes
+
 ## Debugging
 
 ```bash

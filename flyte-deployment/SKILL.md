@@ -336,3 +336,9 @@ For configuring Spark, Ray, MPI, Dask, and other task plugins, see `references/p
 ## Authentication & Operations
 
 For OAuth2/OIDC, ingress, upgrades, monitoring, scaling FlytePropeller, and troubleshooting, see `references/auth-and-operations.md`.
+
+## Cross-References
+
+- [flyte-sdk](../flyte-sdk/) — Flytekit SDK for authoring workflows
+- [flyte-kuberay](../flyte-kuberay/) — Flyte + KubeRay integration for Ray tasks
+

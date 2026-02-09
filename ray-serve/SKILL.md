@@ -415,6 +415,12 @@ deployments:
 
 See `references/performance.md` for performance tuning and troubleshooting.
 
+## Cross-References
+
+- [ray-core](../ray-core/) — Ray actors powering Serve deployments
+- [kuberay](../kuberay/) — Deploy Serve on Kubernetes via RayService CRD
+- [vllm](../vllm/) — Serve vLLM models with Ray Serve
+
 ## Reference
 
 - [Serve config files](https://docs.ray.io/en/latest/serve/production-guide/config.html)

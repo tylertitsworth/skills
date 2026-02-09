@@ -447,6 +447,13 @@ See `references/troubleshooting.md` for:
 - Model loading failures and multi-GPU communication errors
 - LoRA, structured output, speculative decoding, and multimodal issues
 
+## Cross-References
+
+- [openai-api](../openai-api/) — OpenAI-compatible API served by vLLM
+- [ray-serve](../ray-serve/) — Deploy vLLM behind Ray Serve for autoscaling
+- [llm-evaluation](../llm-evaluation/) — Use vLLM backend for LLM benchmarking
+- [kuberay](../kuberay/) — Deploy vLLM on Ray clusters via KubeRay
+
 ## Reference
 
 - [vLLM docs](https://docs.vllm.ai/)

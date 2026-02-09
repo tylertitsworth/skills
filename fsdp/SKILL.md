@@ -389,6 +389,12 @@ See `references/troubleshooting.md` for:
 - Mixed precision instability
 - torch.compile incompatibilities
 
+## Cross-References
+
+- [pytorch](../pytorch/) — PyTorch distributed training fundamentals
+- [ray-train](../ray-train/) — FSDP integration with Ray Train
+- [megatron-lm](../megatron-lm/) — Alternative: Megatron-LM for very large models
+
 ## Reference
 
 - [FSDP Tutorial](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html)
