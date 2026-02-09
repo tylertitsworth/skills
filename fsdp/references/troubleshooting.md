@@ -18,7 +18,7 @@ loss = model(batch)  # ensure all ranks get a batch (use drop_last=True)
 
 **Debug:**
 ```bash
-export TORCH_DISTRIBUTED_DEBUG=DETAIL
+# Set TORCH_DISTRIBUTED_DEBUG=DETAIL in container env
 ```
 
 ### Hang during initialization
