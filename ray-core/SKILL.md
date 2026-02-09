@@ -15,8 +15,53 @@ description: >
 
 Distributed computing primitives for Python. Three building blocks: **tasks**, **actors**, and **objects**.
 
-**Docs:** https://docs.ray.io/en/latest/ray-core/walkthrough.html
+**Docs:** https://docs.ray.io/en/latest/ray-core/walkthrough.html  
 **Version:** Ray 2.53.0
+
+## Initialization
+
+```python
+import ray
+
+# Local mode
+ray.init()
+
+# Connect to existing cluster
+ray.init(address="ray://head-svc:10001")  # via Ray client
+ray.init(address="auto")                   # auto-detect (inside Ray pod)
+
+# Configuration
+ray.init(
+    num_cpus=8,                    # override detected CPUs (local only)
+    num_gpus=2,                    # override detected GPUs
+    object_store_memory=10**10,    # 10GB object store
+    runtime_env={                  # per-job dependencies
+        "pip": ["torch==2.5.0"],
+        "env_vars": {"KEY": "val"},
+        "working_dir": "./src",
+    },
+    logging_level="INFO",
+    dashboard_host="0.0.0.0",
+)
+```
+
+### Runtime Environments
+
+Install dependencies dynamically per-job, per-task, or per-actor:
+
+```python
+# Per-job (in ray.init)
+ray.init(runtime_env={"pip": ["transformers"], "env_vars": {"HF_HOME": "/cache"}})
+
+# Per-task override
+@ray.remote(runtime_env={"pip": ["scipy"]})
+def special_task(): ...
+
+# Per-actor override
+actor = MyActor.options(runtime_env={"pip": ["xgboost"]}).remote()
+```
+
+Fields: `pip`, `conda`, `env_vars`, `working_dir`, `py_modules`, `excludes`, `container`.
 
 ## Tasks
 
@@ -144,7 +189,7 @@ ray.kill(counter)
 
 ## Object Store
 
-Ray's distributed shared-memory object store passes data between tasks/actors efficiently.
+Ray's distributed shared-memory object store (Plasma) passes data between tasks/actors.
 
 ```python
 # Explicitly put data into object store
@@ -162,11 +207,13 @@ ready, not_ready = ray.wait(futures, num_returns=1, timeout=5.0)
 
 ### Key Rules
 
-- Objects are **immutable** once in the store
-- Small returns (≤100KB) are inlined directly to caller — no store overhead
-- Large objects are stored in shared memory — zero-copy reads on same node
-- Object refs can be passed to tasks/actors as arguments (lazy execution)
-- Objects are garbage collected when no refs remain
+- Objects are **immutable** once in the store — numpy arrays become read-only (copy before writing)
+- Small returns (≤100KB) inlined directly to caller — no store overhead
+- Large objects in shared memory — zero-copy reads on same node
+- Object refs can be passed as arguments (lazy execution, no intermediate fetch)
+- Garbage collected when no refs remain
+- Serialization: Pickle protocol 5 + cloudpickle for lambdas/nested functions
+- NumPy arrays use out-of-band data (Pickle 5) — stored directly in shared memory
 
 ## Fault Tolerance
 
@@ -234,6 +281,31 @@ futures = [
 | `STRICT_PACK` | All bundles on one node (fails if impossible) |
 | `STRICT_SPREAD` | Each bundle on different node (fails if impossible) |
 
+## Cross-Language Support
+
+Ray supports Java and C++ tasks/actors that interoperate with Python:
+
+```python
+# Call a Java actor from Python
+java_actor = ray.cross_language.java_actor_class("com.example.MyActor").remote()
+result = java_actor.method.remote(arg)
+```
+
+## Generator Tasks
+
+Stream results incrementally from a task:
+
+```python
+@ray.remote(num_returns="dynamic")
+def generate_data(n):
+    for i in range(n):
+        yield ray.put(i)  # yields ObjectRef per item
+
+gen = generate_data.remote(100)
+for ref in gen:
+    print(ray.get(ref))
+```
+
 ## Debugging
 
 ```bash
@@ -246,6 +318,7 @@ ray dashboard  # or port-forward on K8s
 # List tasks/actors
 ray list tasks
 ray list actors
+ray summary actors
 
 # Timeline profiling
 ray timeline  # generates chrome://tracing compatible JSON
@@ -253,10 +326,23 @@ ray timeline  # generates chrome://tracing compatible JSON
 
 ```python
 # Inside a task/actor
-ray.get_runtime_context().get_node_id()
-ray.get_runtime_context().get_task_id()
-ray.get_runtime_context().get_actor_id()
+ctx = ray.get_runtime_context()
+ctx.get_node_id()
+ctx.get_task_id()
+ctx.get_actor_id()
+ctx.get_job_id()
+ctx.get_runtime_env()
 ```
+
+### Common Errors
+
+| Error | Cause | Fix |
+|---|---|---|
+| `RayOutOfMemoryError` | Object store full | Reduce object lifetimes, increase `object_store_memory` |
+| `assignment destination is read-only` | Writing to object-store numpy array | `arr = arr.copy()` before mutation |
+| `ObjectLostError` | Node holding object died | Enable task retries / object reconstruction |
+| `ActorDiedError` | Actor process crashed | Set `max_restarts`, check OOM / exceptions |
+| `ModuleNotFoundError` | Missing deps on worker | Use `runtime_env` with pip packages |
 
 ## Patterns and Anti-Patterns
 
