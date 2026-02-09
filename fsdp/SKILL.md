@@ -313,24 +313,45 @@ for batch in dataloader:
 
 ## FSDP2 (torch.distributed._composable.fsdp)
 
-PyTorch 2.4+ introduces FSDP2 — a composable, per-parameter sharding API:
+PyTorch 2.4+ introduces FSDP2 — a composable, per-parameter sharding API. **FSDP2 is the recommended path for new projects.**
 
 ```python
 from torch.distributed._composable.fsdp import fully_shard, MixedPrecisionPolicy
 
 mp_policy = MixedPrecisionPolicy(param_dtype=torch.bfloat16, reduce_dtype=torch.bfloat16)
 
-# Apply per-module (more granular control)
+# Apply bottom-up: layers first, then root
 for layer in model.layers:
     fully_shard(layer, mp_policy=mp_policy)
-fully_shard(model, mp_policy=mp_policy)
+fully_shard(model, mp_policy=mp_policy)  # groups remaining params (embeddings, output)
+
+# Optimizer must use DTensor params
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
 ```
 
 **Key differences from FSDP1:**
-- Per-parameter sharding (composable with TP, CP, etc.)
-- No wrapper — modifies model in-place
-- Better integration with `torch.compile`
+- **Per-parameter dim-0 sharding** via DTensor (vs flat-parameter concatenation) — more intuitive, relaxes frozen parameter constraints
+- **No wrapper** — `fully_shard` modifies module in-place, unions type with `FSDPModule` (exposes `.reshard()`, `.unshard()`)
+- **FQNs preserved** — `state_dict()` keys unchanged, enabling seamless checkpoint compatibility
+- **No full state dict API** — use `DTensor.full_tensor()` or `torch.distributed.checkpoint` for conversion
+- **Communication-free sharded state dicts** — no all-gathers needed (FSDP1 required them)
+- **Better `torch.compile` integration** — composable with TP, CP, etc.
 - Used by TorchTitan and Megatron-LM Bridge
+
+### FSDP2 reshard_after_forward
+
+Control memory vs compute tradeoff per module:
+
+```python
+# True = free params after forward (default, saves memory)
+fully_shard(layer, reshard_after_forward=True)
+
+# False = keep params unsharded (uses more memory, avoids re-allgather in backward)
+fully_shard(layer, reshard_after_forward=False)
+
+# int = reshard to a larger world size (partial sharding)
+fully_shard(layer, reshard_after_forward=2)
+```
 
 ## Tensor Parallel + FSDP (2D Parallelism)
 
