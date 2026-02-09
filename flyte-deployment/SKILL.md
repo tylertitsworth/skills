@@ -70,8 +70,7 @@ helm install flyte-backend flyteorg/flyte-binary \
 
 # Verify
 kubectl -n flyte get pods
-kubectl -n flyte port-forward svc/flyte-binary 8088:8088 8089:8089
-# Open http://localhost:8088/console
+# Expose console via Ingress on port 8088, or use the kubectl ray plugin for local access
 ```
 
 ### Minimal values.yaml Structure

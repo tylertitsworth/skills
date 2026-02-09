@@ -138,7 +138,7 @@ Flyte components expose Prometheus metrics:
 
 ```bash
 # FlytePropeller metrics
-kubectl port-forward -n flyte deploy/flyte-binary 10254:10254
+# Expose metrics via ServiceMonitor or Ingress on port 10254
 # http://localhost:10254/metrics
 ```
 
@@ -204,7 +204,7 @@ configuration:
 kubectl logs -n flyte deploy/flyte-binary -c flyte-binary-propeller --tail=200
 
 # Check propeller metrics
-kubectl port-forward -n flyte deploy/flyte-binary 10254:10254
+# Expose metrics via ServiceMonitor or Ingress on port 10254
 curl http://localhost:10254/metrics | grep propeller
 ```
 
@@ -246,7 +246,7 @@ Migrations run automatically on startup. If they fail:
 kubectl logs -n flyte deploy/flyte-binary -c flyte-binary-admin --tail=200 | grep -i migration
 
 # Manual migration (rarely needed)
-kubectl exec -n flyte deploy/flyte-binary -- flyteadmin migrate run
+# Run as a Job: flyteadmin migrate run (use the same container image)
 ```
 
 ### Workflow Registration Failures
@@ -278,5 +278,5 @@ kubectl logs -n flyte deploy/flyte-binary -c flyte-binary --tail=100 | grep prop
 kubectl get flyteworkflows -A
 
 # Database connectivity
-kubectl exec -n flyte deploy/flyte-binary -- pg_isready -h <db-host>
+# Verify DB connectivity from a debug pod or init container
 ```
