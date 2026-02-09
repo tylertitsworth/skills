@@ -13,7 +13,7 @@ description: >
 
 # Operator SDK
 
-Operator SDK is a framework for building Kubernetes operators — part of the [Operator Framework](https://operatorframework.io). Version: **1.38.x** (based on Kubebuilder v4).
+Operator SDK is a framework for building Kubernetes operators — part of the [Operator Framework](https://operatorframework.io). Version: **1.38+** (based on Kubebuilder v4).
 
 ## Scaffolding a Project
 

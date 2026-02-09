@@ -12,11 +12,13 @@ description: >
 
 # vLLM
 
-vLLM is a high-throughput LLM inference engine using PagedAttention for optimal GPU memory management. Version: **0.8.x+**.
+vLLM is a high-throughput LLM inference engine using PagedAttention for optimal GPU memory management. Version: **0.8+** (docs target current stable).
 
 ## Engine Configuration
 
-All settings can be passed as Python kwargs to `LLM()` (offline) or `AsyncLLMEngine.from_engine_args()` (server), or as CLI flags to `vllm serve`. This document uses **kwargs** form.
+All settings can be passed as Python kwargs to `LLM()` (offline) or `AsyncLLM.from_engine_args()` (server), or as CLI flags to `vllm serve`. This document uses **kwargs** form.
+
+> **V1 Engine**: vLLM V1 is now the default engine. Key differences from V0: chunked prefill enabled by default, different logprobs semantics (raw by default, use `--logprobs-mode` to change), higher CUDA graph memory usage. Set `VLLM_USE_V1=0` to fall back to V0 if needed.
 
 ### Core Settings
 
@@ -50,7 +52,7 @@ llm = LLM(
 | `max_num_batched_tokens` | Max tokens per scheduler iteration | Auto |
 | `quantization` | Quantization method (`gptq`, `awq`, `fp8`, `bitsandbytes`) | `None` |
 | `enable_prefix_caching` | Automatic prefix caching (APC) | `False` |
-| `enable_chunked_prefill` | Chunked prefill scheduling | `False` |
+| `enable_chunked_prefill` | Chunked prefill scheduling | `True` (V1) |
 | `enforce_eager` | Disable CUDA graphs (for debugging) | `False` |
 | `trust_remote_code` | Allow model custom code | `False` |
 | `served_model_name` | Override model name in API | Model ID |
@@ -231,7 +233,7 @@ response = client.chat.completions.create(
 )
 ```
 
-### Structured Output (Guided Generation)
+### Structured Output
 
 ```python
 from pydantic import BaseModel
@@ -242,19 +244,31 @@ class ModelEval(BaseModel):
     parameters_millions: int
     recommended: bool
 
+# Preferred: response_format with json_schema
 response = client.chat.completions.create(
     model="meta-llama/Llama-3.1-8B-Instruct",
     messages=[{"role": "user", "content": "Evaluate BERT-base for text classification."}],
-    extra_body={
-        "guided_json": ModelEval.model_json_schema(),
-        # Or: "guided_regex": r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}",
-        # Or: "guided_choice": ["positive", "negative", "neutral"],
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "model-eval",
+            "schema": ModelEval.model_json_schema(),
+        },
     },
 )
 
-# Guided decoding backend (engine-level setting)
-llm = LLM(model="...", guided_decoding_backend="outlines")  # or "lm-format-enforcer"
+# Alternative: structured_outputs in extra_body (regex, choice, grammar)
+response = client.chat.completions.create(
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    messages=[{"role": "user", "content": "Classify sentiment."}],
+    extra_body={
+        "structured_outputs": {"choice": ["positive", "negative", "neutral"]},
+        # Or: "structured_outputs": {"regex": r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"},
+    },
+)
 ```
+
+> **Deprecated**: `guided_json`, `guided_regex`, `guided_choice`, `guided_grammar` in `extra_body` still work but are deprecated. Migrate to `response_format` (for JSON schema) or `structured_outputs` (for regex/choice/grammar). The `guided_decoding_backend` request parameter has been removed.
 
 ### Speculative Decoding
 
@@ -274,6 +288,8 @@ llm = LLM(model="...", enable_prefix_caching=True)
 ```
 
 Effective for: shared system prompts, RAG with recurring chunks, multi-turn conversations. Incompatible with sliding window attention models.
+
+For **cache isolation** in shared environments, include `"cache_salt": "your-salt"` in the request body — only requests with the same salt can reuse cached KV blocks.
 
 ### Chunked Prefill
 
@@ -403,7 +419,7 @@ llm = LLM(
 | Variable | Purpose |
 |---|---|
 | `VLLM_ATTENTION_BACKEND` | Override attention backend: `FLASH_ATTN`, `XFORMERS`, `FLASHINFER` |
-| `VLLM_USE_V1` | Enable v1 engine (`1` or `0`) |
+| `VLLM_USE_V1` | V1 engine is default; set `0` to fall back to V0 |
 | `CUDA_VISIBLE_DEVICES` | Restrict visible GPUs |
 | `VLLM_WORKER_MULTIPROC_METHOD` | `spawn` or `fork` for worker processes |
 | `VLLM_PP_LAYER_PARTITION` | Custom pipeline parallel layer splits (e.g., `10,22`) |
