@@ -85,6 +85,44 @@ curl http://localhost:11434/api/generate -d '{"model":"llama3.2:3b","keep_alive"
 curl http://localhost:11434/api/generate -d '{"model":"llama3.2:3b","keep_alive":"0"}'
 ```
 
+## Thinking / Reasoning
+
+Models with reasoning capabilities (e.g., `qwen3`, `deepseek-r1`) can expose their chain-of-thought via the `think` parameter:
+
+```python
+from ollama import chat
+
+# Non-streaming
+response = chat(
+    model='qwen3',
+    messages=[{'role': 'user', 'content': 'How many r in strawberry?'}],
+    think=True,
+    stream=False,
+)
+print('Thinking:', response.message.thinking)
+print('Answer:', response.message.content)
+```
+
+```bash
+# CLI: thinking enabled by default for supported models
+ollama run qwen3 "What is 17 x 23?"
+
+# Disable thinking with /nothink, re-enable with /think
+```
+
+```bash
+# API: set "think": true in the request
+curl http://localhost:11434/api/chat -d '{
+  "model": "qwen3",
+  "messages": [{"role": "user", "content": "How many r in strawberry?"}],
+  "think": true,
+  "stream": false
+}'
+# Response includes message.thinking (reasoning trace) and message.content (final answer)
+```
+
+The `thinking` field is separate from `content` — clients can show/hide the reasoning trace independently. For budget control, some models accept think levels (`"think": "low"`, `"medium"`, `"high"`) instead of boolean.
+
 ## Modelfile
 
 A Modelfile defines a model's base weights, system prompt, and generation parameters:
