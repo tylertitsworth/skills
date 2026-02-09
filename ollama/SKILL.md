@@ -415,3 +415,10 @@ Use Ollama for development, prototyping, and single-user inference. Use vLLM for
 - [openai-api](../openai-api/) — OpenAI-compatible API patterns (Ollama implements the same API)
 - [llm-evaluation](../llm-evaluation/) — Use Ollama as an evaluation backend
 - [huggingface-transformers](../huggingface-transformers/) — Source models to convert to GGUF for Ollama
+
+## Reference
+
+- [Ollama docs](https://github.com/ollama/ollama/tree/main/docs)
+- [Ollama API reference](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [Modelfile reference](https://github.com/ollama/ollama/blob/main/docs/modelfile.md)
+- [Ollama model library](https://ollama.com/library)

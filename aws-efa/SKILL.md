@@ -298,3 +298,10 @@ For p5/p5e/trn2, interfaces on network cards 1+ can be **EFA-only** (no IP stack
 - [fsdp](../fsdp/) — FSDP distributed training using EFA for all-reduce
 - [megatron-lm](../megatron-lm/) — Megatron-LM multi-node training over EFA
 - [ray-train](../ray-train/) — Ray Train distributed jobs on EFA-enabled clusters
+
+## Reference
+
+- [EFA docs](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html)
+- [EFA EKS best practices](https://aws.github.io/aws-eks-best-practices/networking/efa/)
+- [aws-ofi-nccl GitHub](https://github.com/aws/aws-ofi-nccl)
+- `references/troubleshooting.md` — NCCL debug, diagnostics, bandwidth expectations

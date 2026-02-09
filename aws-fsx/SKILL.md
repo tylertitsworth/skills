@@ -332,3 +332,10 @@ See `references/troubleshooting.md` for common issues.
 - [ray-train](../ray-train/) — Distributed training jobs consuming FSx-backed PVCs
 - [kueue](../kueue/) — Queue training jobs that mount FSx volumes
 - [megatron-lm](../megatron-lm/) — Large-scale training with shared checkpoint storage
+
+## Reference
+
+- [FSx for Lustre docs](https://docs.aws.amazon.com/fsx/latest/LustreGuide/)
+- [FSx CSI driver](https://github.com/kubernetes-sigs/aws-fsx-csi-driver)
+- [FSx pricing](https://aws.amazon.com/fsx/lustre/pricing/)
+- `references/troubleshooting.md` — mount issues, performance, data repository tasks

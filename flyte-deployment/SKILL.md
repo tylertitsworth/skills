@@ -344,3 +344,9 @@ For OAuth2/OIDC, ingress, upgrades, monitoring, scaling FlytePropeller, and trou
 - [kueue](../kueue/) — Queue management for Flyte K8s tasks
 - [operator-sdk](../operator-sdk/) — Operator patterns used by Flyte's K8s deployment
 
+## Reference
+
+- [Flyte docs](https://docs.flyte.org/)
+- [Flyte GitHub](https://github.com/flyteorg/flyte)
+- [Flyte Helm chart](https://github.com/flyteorg/flyte/tree/master/charts)
+

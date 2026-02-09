@@ -601,3 +601,11 @@ For installation options, Helm configuration, KueueConfiguration reference, metr
 - [kuberay](../kuberay/) — Gang scheduling RayJob/RayCluster workloads with Kueue
 - [aws-fsx](../aws-fsx/) — FSx storage for queued training jobs
 
+## Reference
+
+- [Kueue docs](https://kueue.sigs.k8s.io/docs/)
+- [Kueue GitHub](https://github.com/kubernetes-sigs/kueue)
+- `references/operations.md` — deployment, Helm, metrics, MultiKueue
+- `references/multi-tenant.md` — multi-tenancy patterns
+- `references/troubleshooting.md` — common issues and fixes
+
