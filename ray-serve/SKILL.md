@@ -1,369 +1,337 @@
 ---
 name: ray-serve
 description: >
-  Deploy and serve ML models with Ray Serve — scalable online inference on Ray. Use when:
-  (1) Deploying models as Serve deployments (single model, multi-model composition, DAGs),
-  (2) Configuring autoscaling (replicas, target concurrency, scaling speed),
-  (3) Setting up dynamic request batching for throughput optimization,
-  (4) Building multi-model pipelines with DeploymentHandle composition,
-  (5) Integrating with FastAPI for custom HTTP endpoints,
-  (6) Streaming responses (LLM token-by-token output),
-  (7) Deploying on Kubernetes via KubeRay RayService,
-  (8) Debugging serving issues (latency, OOM, cold starts, queue backlogs),
-  (9) Performance tuning (async methods, resource allocation, gRPC).
+  Scalable model serving with Ray Serve on Kubernetes. Use when: (1) Configuring ServeConfigV2
+  (applications, deployments, proxy, HTTP/gRPC options), (2) Tuning autoscaling parameters
+  (target_ongoing_requests, upscale/downscale delays, smoothing factors), (3) Configuring
+  deployment resources (ray_actor_options, num_replicas, max_ongoing_requests),
+  (4) Setting up request batching (@serve.batch parameters), (5) Composing multi-model
+  pipelines with DeploymentHandle, (6) Deploying on Kubernetes with RayService CRD,
+  (7) Configuring health checks, graceful shutdown, and logging,
+  (8) Tuning performance (streaming, gRPC, multiplexed models).
 ---
 
 # Ray Serve
 
-Scalable model serving framework built on Ray. Serves ML models and arbitrary Python logic with autoscaling, batching, composition, and streaming.
+Ray Serve is a scalable model serving framework built on Ray. Deploys on Kubernetes via the RayService CRD. Version: **2.53.0+**.
 
-**Docs:** https://docs.ray.io/en/latest/serve/index.html
-**Version:** Ray 2.53.0
+## ServeConfigV2 — Full Schema
 
-## Basic Deployment
+The Serve config file is the production deployment format. It's embedded in the RayService CRD's `serveConfigV2` field.
 
-```python
-from ray import serve
-from starlette.requests import Request
+```yaml
+proxy_location: EveryNode          # Where to run HTTP/gRPC proxies
 
-@serve.deployment(
-    ray_actor_options={"num_gpus": 1},
-    num_replicas=2,
-)
-class TextClassifier:
-    def __init__(self):
-        from transformers import pipeline
-        self.model = pipeline("text-classification", device="cuda:0")
+http_options:                      # Global HTTP settings (immutable at runtime)
+  host: 0.0.0.0
+  port: 8000
+  request_timeout_s: 300
+  keep_alive_timeout_s: 5
 
-    async def __call__(self, request: Request):
-        data = await request.json()
-        return self.model(data["text"])[0]
+grpc_options:                      # Global gRPC settings (immutable at runtime)
+  port: 9000
+  grpc_servicer_functions:
+    - my_module:add_MyServiceServicer_to_server
+  request_timeout_s: 300
 
-app = TextClassifier.bind()
+logging_config:                    # Global logging (overridable per-app/deployment)
+  log_level: INFO
+  logs_dir: null
+  encoding: TEXT                   # TEXT or JSON
+  enable_access_log: true
 
-# Run locally
-serve.run(app, route_prefix="/classify")
-
-# Query
-# curl -X POST http://localhost:8000/classify -d '{"text": "hello world"}'
+applications:                      # One or more applications
+  - name: my-app
+    route_prefix: /
+    import_path: my_module:app
+    runtime_env:
+      pip: [torch, transformers]
+      env_vars:
+        MODEL_ID: meta-llama/Llama-3.1-8B
+    args: {}                       # Passed to app builder function
+    external_scaler_enabled: false # Enable external scaling REST API
+    deployments:
+      - name: MyDeployment
+        # ... deployment settings (see below)
 ```
 
-### Deployment Options
+### Proxy Location
 
-```python
-@serve.deployment(
-    num_replicas=2,                           # fixed replica count
-    # OR
-    num_replicas="auto",                      # enable autoscaling with defaults
-    max_ongoing_requests=5,                   # max concurrent requests per replica
-    ray_actor_options={
-        "num_gpus": 1,                        # GPU per replica
-        "num_cpus": 2,                        # CPUs per replica
-        "memory": 8 * 1024**3,                # memory reservation (bytes)
-        "resources": {"TPU": 1},              # custom resources
-    },
-    health_check_period_s=10,                 # health check interval
-    health_check_timeout_s=30,                # health check timeout
-    graceful_shutdown_timeout_s=20,           # drain time on shutdown
-)
-class MyDeployment: ...
-```
+| Value | Behavior |
+|---|---|
+| `EveryNode` (default) | Run proxy on every node with at least one replica |
+| `HeadOnly` | Single proxy on head node only |
+| `Disabled` | No proxies — use DeploymentHandle only |
 
-### Fractional GPUs
+### HTTP Options
 
-Share a GPU between multiple models:
-
-```python
-@serve.deployment(ray_actor_options={"num_gpus": 0.5})
-class SmallModel: ...
-
-@serve.deployment(ray_actor_options={"num_gpus": 0.5})
-class AnotherSmallModel: ...
-```
-
-## Autoscaling
-
-```python
-@serve.deployment(
-    num_replicas="auto",                     # enables autoscaling
-    autoscaling_config={
-        "target_ongoing_requests": 2,        # target concurrent requests per replica
-        "min_replicas": 1,                   # minimum replicas (0 = scale to zero)
-        "max_replicas": 20,                  # maximum replicas
-        "upscale_delay_s": 3,                # wait before upscaling
-        "downscale_delay_s": 300,            # wait before downscaling
-        "initial_replicas": 2,               # replicas at startup
-    },
-    max_ongoing_requests=5,                  # backpressure limit per replica
-)
-class AutoscaledModel: ...
-```
-
-**Key tuning guidelines:**
-- `target_ongoing_requests`: Lower = lower latency, higher = better throughput
-- `max_ongoing_requests`: Set ~2-3× target for headroom
-- `min_replicas=0`: Enables scale-to-zero (cold start on first request)
-- `max_replicas`: Set ~20% higher than peak need
-
-## Dynamic Request Batching
-
-Batch individual requests for vectorized GPU inference:
-
-```python
-from typing import List
-
-@serve.deployment(ray_actor_options={"num_gpus": 1})
-class BatchedModel:
-    def __init__(self):
-        self.model = load_model()
-
-    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1)
-    async def __call__(self, inputs: List[str]) -> List[dict]:
-        # inputs is a list of individual request values
-        results = self.model.predict_batch(inputs)
-        return results  # must return list of same length as inputs
-```
-
-### Batch Parameters
-
-| Parameter | Default | Purpose |
+| Setting | Purpose | Default |
 |---|---|---|
-| `max_batch_size` | 10 | Maximum batch size |
-| `batch_wait_timeout_s` | 0.01 | Max wait for batch to fill |
-| `max_concurrent_batches` | 1 | Parallel batch processing |
-| `batch_size_fn` | `len` | Custom batch size metric (e.g., total tokens) |
+| `host` | Bind address | `0.0.0.0` |
+| `port` | HTTP port | `8000` |
+| `request_timeout_s` | End-to-end request timeout | None (no timeout) |
+| `keep_alive_timeout_s` | HTTP keep-alive timeout | `5` |
 
-### Custom Batch Size (e.g., Token-Based)
+### gRPC Options
 
-```python
-def count_tokens(texts: List[str]) -> int:
-    return sum(len(t.split()) for t in texts)
+| Setting | Purpose | Default |
+|---|---|---|
+| `port` | gRPC port | `9000` |
+| `grpc_servicer_functions` | Import paths for gRPC servicer registration functions | `[]` |
+| `request_timeout_s` | End-to-end request timeout | None |
 
-@serve.batch(max_batch_size=2048, batch_size_fn=count_tokens)
-async def predict(self, texts: List[str]) -> List[dict]: ...
+### Logging Config
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `log_level` | Log level (DEBUG, INFO, WARNING, ERROR) | `INFO` |
+| `logs_dir` | Custom log directory | None |
+| `encoding` | Log format: `TEXT` or `JSON` | `TEXT` |
+| `enable_access_log` | Log every request | `true` |
+
+Can be set globally, per-application, or per-deployment (most specific wins).
+
+### Application Settings
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `name` | Unique application name | required |
+| `route_prefix` | HTTP route prefix (must be unique) | `/` |
+| `import_path` | Python import path to the Serve app | required |
+| `runtime_env` | Runtime environment (pip packages, env vars, working_dir) | `{}` |
+| `args` | Arguments passed to app builder function | `{}` |
+| `external_scaler_enabled` | Enable external scaling REST API | `false` |
+| `deployments` | Per-deployment overrides | `[]` |
+
+## Deployment Settings
+
+Every `@serve.deployment` accepts these settings. Set them in code (decorator or `.options()`) or override in the config file. **Config file takes highest priority**, then code, then defaults.
+
+### Core Deployment Settings
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `name` | Deployment name (must match code) | Class/function name |
+| `num_replicas` | Fixed replica count, or `"auto"` for autoscaling | `1` |
+| `max_ongoing_requests` | Max concurrent requests per replica | `5` |
+| `max_queued_requests` | Max queued requests per caller (experimental) | `-1` (no limit) |
+| `user_config` | JSON-serializable config passed to `reconfigure()` | None |
+| `logging_config` | Per-deployment logging override | Global config |
+
+### Ray Actor Options
+
+Resources allocated to each replica actor:
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `num_cpus` | CPU cores per replica | `1` |
+| `num_gpus` | GPUs per replica | `0` |
+| `memory` | Memory in bytes per replica | Auto |
+| `accelerator_type` | Required accelerator (e.g., `A100`, `H100`) | None |
+| `resources` | Custom resource labels | `{}` |
+| `runtime_env` | Per-replica runtime environment | `{}` |
+| `object_store_memory` | Object store memory per replica | Auto |
+
+```yaml
+deployments:
+  - name: LLMDeployment
+    num_replicas: 2
+    ray_actor_options:
+      num_cpus: 4
+      num_gpus: 1
+      accelerator_type: A100
+      memory: 34359738368  # 32 GiB in bytes
 ```
 
-## Model Composition
+> **Important:** `ray_actor_options` is treated as a single dict. Setting it in the config file completely replaces any values from code (not merged). Same applies to `user_config` and `autoscaling_config`.
 
-Combine multiple deployments with `DeploymentHandle`:
+### Health Check Settings
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `health_check_period_s` | Interval between health checks | `10` |
+| `health_check_timeout_s` | Timeout for each health check | `30` |
+
+Implement a custom health check:
+```python
+@serve.deployment
+class MyModel:
+    def check_health(self):
+        if not self.model_loaded:
+            raise RuntimeError("Model not loaded")
+```
+
+### Graceful Shutdown Settings
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `graceful_shutdown_wait_loop_s` | Wait interval checking for remaining work | `2` |
+| `graceful_shutdown_timeout_s` | Max time before force kill | `20` |
+
+## Autoscaling Configuration
+
+Set `num_replicas: "auto"` or provide explicit `autoscaling_config`:
+
+### autoscaling_config Settings
+
+| Setting | Purpose | Default | Default with `auto` |
+|---|---|---|---|
+| `min_replicas` | Minimum replicas | `1` | `1` |
+| `max_replicas` | Maximum replicas | `1` | `100` |
+| `initial_replicas` | Starting replica count | None (uses `min_replicas`) | None |
+| `target_ongoing_requests` | Target concurrent requests per replica | `2` | `2` |
+| `metrics_interval_s` | How often replicas report metrics | `10.0` | `10.0` |
+| `look_back_period_s` | Window for averaging metrics | `30.0` | `30.0` |
+| `smoothing_factor` | Gain factor for scaling decisions | `1.0` | `1.0` |
+| `upscale_smoothing_factor` | Override smoothing for upscaling | None (uses `smoothing_factor`) | None |
+| `downscale_smoothing_factor` | Override smoothing for downscaling | None (uses `smoothing_factor`) | None |
+| `upscaling_factor` | Multiplicative factor for upscale steps | None | None |
+| `downscaling_factor` | Multiplicative factor for downscale steps | None | None |
+| `upscale_delay_s` | Seconds to wait before upscaling | `30.0` | `30.0` |
+| `downscale_delay_s` | Seconds to wait before downscaling | `600.0` | `600.0` |
+| `downscale_to_zero_delay_s` | Extra delay before scaling to 0 | None | None |
+| `aggregation_function` | How to aggregate metrics (`MEAN`, `MAX`) | `MEAN` | `MEAN` |
+
+```yaml
+deployments:
+  - name: LLMDeployment
+    max_ongoing_requests: 10
+    autoscaling_config:
+      min_replicas: 1
+      max_replicas: 8
+      target_ongoing_requests: 3
+      upscale_delay_s: 10
+      downscale_delay_s: 300
+      upscale_smoothing_factor: 2.0      # aggressive upscale
+      downscale_smoothing_factor: 0.5    # conservative downscale
+      metrics_interval_s: 5
+      look_back_period_s: 15
+```
+
+**Tuning guidelines:**
+- `target_ongoing_requests` — lower = lower latency, higher = higher throughput
+- `upscale_delay_s` — lower for bursty traffic, higher for steady traffic
+- `downscale_delay_s` — keep high (300-600s) to avoid thrashing
+- `smoothing_factor` > 1 = more aggressive scaling, < 1 = more conservative
+- `min_replicas: 0` — enables scale-to-zero (adds cold start latency)
+
+## Request Batching (@serve.batch)
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `max_batch_size` | Max requests per batch | `10` |
+| `batch_wait_timeout_s` | Max wait for a full batch | `0.01` |
+| `max_concurrent_batches` | Max batches running concurrently | `1` |
+| `batch_size_fn` | Custom function to compute batch size | None |
+
+```python
+@serve.deployment
+class BatchModel:
+    @serve.batch(max_batch_size=32, batch_wait_timeout_s=0.1, max_concurrent_batches=2)
+    async def handle_batch(self, requests: list[str]) -> list[str]:
+        # Process entire batch at once (e.g., batched GPU inference)
+        return self.model.predict(requests)
+
+    async def __call__(self, request):
+        return await self.handle_batch(request.query_params["text"])
+```
+
+**Tuning:** Set `max_batch_size` to your model's optimal batch size. Set `batch_wait_timeout_s` low for latency-sensitive, higher for throughput-sensitive. Increase `max_concurrent_batches` if GPU can handle multiple batches.
+
+## user_config (Dynamic Reconfiguration)
+
+Update deployment behavior without restarting replicas:
+
+```python
+@serve.deployment
+class Model:
+    def reconfigure(self, config: dict):
+        """Called on initial deploy and every config update."""
+        self.model_path = config["model_path"]
+        self.temperature = config.get("temperature", 1.0)
+        self.model = load_model(self.model_path)
+```
+
+```yaml
+deployments:
+  - name: Model
+    user_config:
+      model_path: meta-llama/Llama-3.1-8B
+      temperature: 0.7
+```
+
+Update `user_config` in the config file and re-apply — replicas call `reconfigure()` without restart. Useful for: model version swaps, A/B test weights, feature flags, hyperparameters.
+
+## Model Composition (DeploymentHandle)
+
+Chain multiple deployments in a pipeline:
 
 ```python
 from ray.serve.handle import DeploymentHandle
 
-@serve.deployment(ray_actor_options={"num_gpus": 1})
-class Encoder:
-    def encode(self, text: str):
-        return self.model.encode(text)
-
-@serve.deployment(ray_actor_options={"num_gpus": 1})
-class Ranker:
-    def rank(self, query_emb, doc_embs):
-        return sorted_results(query_emb, doc_embs)
+@serve.deployment
+class Preprocessor:
+    async def __call__(self, text: str) -> list[int]:
+        return tokenize(text)
 
 @serve.deployment
-class SearchPipeline:
-    def __init__(self, encoder: DeploymentHandle, ranker: DeploymentHandle):
-        self.encoder = encoder
-        self.ranker = ranker
+class Model:
+    async def __call__(self, tokens: list[int]) -> str:
+        return self.model.generate(tokens)
 
-    async def __call__(self, request: Request):
-        data = await request.json()
-        query_emb = await self.encoder.encode.remote(data["query"])
-        doc_embs = [
-            self.encoder.encode.remote(doc) for doc in data["documents"]
-        ]
-        return await self.ranker.rank.remote(query_emb, doc_embs)
+@serve.deployment
+class Pipeline:
+    def __init__(self, preprocessor: DeploymentHandle, model: DeploymentHandle):
+        self.preprocessor = preprocessor
+        self.model = model
 
-# Bind the DAG
-app = SearchPipeline.bind(
-    Encoder.bind(),
-    Ranker.bind(),
-)
-serve.run(app)
-```
+    async def __call__(self, request) -> str:
+        tokens = await self.preprocessor.remote(request.query_params["text"])
+        return await self.model.remote(tokens)
 
-Each deployment in the composition scales independently.
-
-## FastAPI Integration
-
-```python
-from fastapi import FastAPI
-
-fastapi_app = FastAPI()
-
-@serve.deployment(ray_actor_options={"num_gpus": 1})
-@serve.ingress(fastapi_app)
-class LLMService:
-    def __init__(self):
-        self.model = load_llm()
-
-    @fastapi_app.post("/generate")
-    async def generate(self, prompt: str, max_tokens: int = 256):
-        return {"text": self.model.generate(prompt, max_tokens)}
-
-    @fastapi_app.get("/health")
-    async def health(self):
-        return {"status": "ok"}
-
-app = LLMService.bind()
+app = Pipeline.bind(Preprocessor.bind(), Model.bind())
 ```
 
 ## Streaming Responses
 
-For LLM token-by-token streaming:
-
 ```python
 from starlette.responses import StreamingResponse
 
-@serve.deployment(ray_actor_options={"num_gpus": 1})
-class StreamingLLM:
-    def __init__(self):
-        self.model = load_llm()
-
-    async def __call__(self, request: Request):
-        data = await request.json()
-
-        async def token_generator():
-            for token in self.model.generate_stream(data["prompt"]):
+@serve.deployment
+class StreamModel:
+    async def __call__(self, request):
+        async def generate():
+            for token in self.model.stream(request.query_params["prompt"]):
                 yield token
-
-        return StreamingResponse(token_generator(), media_type="text/plain")
+        return StreamingResponse(generate(), media_type="text/plain")
 ```
 
-Also works with `DeploymentHandle` streaming:
+## Multiplexed Models (Multi-LoRA)
+
+Load multiple model variants on the same replica:
 
 ```python
-# Caller side
-handle = serve.get_deployment_handle("StreamingLLM")
-response = handle.options(stream=True).remote(request)
-async for token in response:
-    print(token, end="")
-```
-
-## gRPC Support
-
-```python
-from ray import serve
-from ray.serve.generated import serve_pb2, serve_pb2_grpc
-
-@serve.deployment
-class GRPCModel:
-    async def Predict(self, request: serve_pb2.PredictRequest) -> serve_pb2.PredictResponse:
-        return serve_pb2.PredictResponse(output=f"Result for {request.input}")
-
-# Configure gRPC in Serve config:
-# grpc_options:
-#   port: 9000
-#   grpc_servicer_functions: ["serve_pb2_grpc.add_PredictServiceServicer_to_server"]
-```
-
-## Multiplexed Models
-
-Serve many model variants with a single deployment using model multiplexing:
-
-```python
-@serve.deployment(num_replicas=4)
-class MultiModelServer:
+@serve.deployment(num_replicas=2)
+class MultiLoRAModel:
     def __init__(self):
-        self.models = {}
+        self.base_model = load_base_model()
+        self.adapters = {}
 
-    def get_model(self, model_id: str):
-        if model_id not in self.models:
-            self.models[model_id] = load_model(model_id)
-        return self.models[model_id]
-
-    async def __call__(self, request: Request):
-        data = await request.json()
-        model = self.get_model(data["model_id"])
-        return model.predict(data["input"])
-```
-
-For built-in multiplexing with LRU eviction:
-
-```python
-@serve.deployment
-class MultiplexedLLM:
-    @serve.multiplexed(max_num_models_per_replica=3)
+    @serve.multiplexed(max_num_models_per_replica=10)
     async def get_model(self, model_id: str):
-        return load_model(model_id)
-
-    async def __call__(self, request: Request):
-        model_id = serve.get_multiplexed_model_id()
-        model = await self.get_model(model_id)
-        return model.predict(await request.json())
-```
-
-## Logging and Metrics
-
-```python
-import logging
-from ray.serve.metrics import Counter, Histogram
-
-logger = logging.getLogger("ray.serve")
-
-@serve.deployment
-class MonitoredModel:
-    def __init__(self):
-        self.request_counter = Counter(
-            "my_model_requests_total",
-            description="Total requests",
-            tag_keys=("model_name",),
-        )
-        self.latency_histogram = Histogram(
-            "my_model_latency_seconds",
-            description="Request latency",
-            boundaries=[0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
-        )
+        if model_id not in self.adapters:
+            self.adapters[model_id] = load_adapter(model_id)
+        return self.adapters[model_id]
 
     async def __call__(self, request):
-        self.request_counter.inc(tags={"model_name": "bert"})
-        with self.latency_histogram.time():
-            return self.model.predict(await request.json())
-```
-
-Built-in Prometheus metrics exposed on port 9090 by default.
-
-## Serve Config File
-
-Declarative deployment without Python:
-
-```yaml
-# serve_config.yaml
-proxy_location: EveryNode           # or HeadOnly, Disabled
-http_options:
-  host: 0.0.0.0
-  port: 8000
-grpc_options:
-  port: 9000
-applications:
-- name: my-app
-  route_prefix: /
-  import_path: my_module:app
-  runtime_env:
-    pip: ["transformers", "torch"]
-  deployments:
-  - name: MyModel
-    num_replicas: auto
-    autoscaling_config:
-      target_ongoing_requests: 2
-      min_replicas: 1
-      max_replicas: 10
-    max_ongoing_requests: 5
-    ray_actor_options:
-      num_gpus: 1
-    health_check_period_s: 10
-```
-
-```bash
-serve deploy serve_config.yaml
-serve status
+        model_id = serve.get_multiplexed_model_id()
+        adapter = await self.get_model(model_id)
+        return self.base_model.generate(request, adapter)
 ```
 
 ## Kubernetes Deployment (RayService)
 
-Deploy via KubeRay's RayService CRD. See the **kuberay** skill's `references/rayservice.md` for full details.
-
-Quick reference:
+The ServeConfigV2 is embedded in the RayService CRD:
 
 ```yaml
 apiVersion: ray.io/v1
@@ -371,38 +339,87 @@ kind: RayService
 metadata:
   name: llm-service
 spec:
+  serviceUnhealthySecondThreshold: 900    # time before marking service unhealthy
+  deploymentUnhealthySecondThreshold: 300  # time before marking deployment unhealthy
   serveConfigV2: |
     applications:
-    - name: llm
-      route_prefix: /
-      import_path: serve_app:app
-      deployments:
-      - name: LLMService
-        num_replicas: auto
-        ray_actor_options:
-          num_gpus: 1
+      - name: llm
+        route_prefix: /
+        import_path: serve_app:app
+        runtime_env:
+          pip: [vllm, transformers]
+        deployments:
+          - name: VLLMDeployment
+            num_replicas: 2
+            max_ongoing_requests: 24
+            ray_actor_options:
+              num_cpus: 4
+              num_gpus: 1
+            autoscaling_config:
+              min_replicas: 1
+              max_replicas: 4
+              target_ongoing_requests: 8
   rayClusterConfig:
-    rayVersion: "2.53.0"
-    headGroupSpec: ...
-    workerGroupSpecs: ...
+    headGroupSpec:
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              resources:
+                limits:
+                  cpu: "4"
+                  memory: 8Gi
+    workerGroupSpecs:
+      - groupName: gpu-workers
+        replicas: 2
+        minReplicas: 1
+        maxReplicas: 4
+        template:
+          spec:
+            containers:
+              - name: ray-worker
+                resources:
+                  limits:
+                    cpu: "8"
+                    memory: 32Gi
+                    nvidia.com/gpu: "1"
 ```
 
-## Key Commands
+### RayService-Specific Settings
 
-```bash
-# Deploy from config file
-serve deploy config.yaml
+| Setting | Purpose | Default |
+|---|---|---|
+| `serviceUnhealthySecondThreshold` | Seconds before marking service unhealthy | `900` |
+| `deploymentUnhealthySecondThreshold` | Seconds before marking deployment unhealthy | `300` |
 
-# Check status
-serve status
+### High Availability
 
-# List applications
-serve status --address http://localhost:52365
+For HA, set `max_replicas_per_node: 1` to spread replicas across nodes:
 
-# Shutdown
-serve shutdown
+```yaml
+deployments:
+  - name: MyDeployment
+    num_replicas: 3
+    max_replicas_per_node: 1
 ```
 
-## Troubleshooting & Performance
+## Priority of Settings
 
-For debugging latency, OOM, cold starts, and performance tuning, see `references/performance.md`.
+1. **Serve config file** (highest) — overrides everything
+2. **Application code** (`@serve.deployment` decorator or `.options()`)
+3. **Ray Serve defaults** (lowest)
+
+`ray_actor_options`, `user_config`, and `autoscaling_config` are each replaced as whole dicts (not merged) when specified in the config file.
+
+## Debugging
+
+See `references/performance.md` for performance tuning and troubleshooting.
+
+## Reference
+
+- [Serve config files](https://docs.ray.io/en/latest/serve/production-guide/config.html)
+- [Deployment configuration](https://docs.ray.io/en/latest/serve/configure-serve-deployment.html)
+- [AutoscalingConfig API](https://docs.ray.io/en/latest/serve/api/doc/ray.serve.config.AutoscalingConfig.html)
+- [Advanced autoscaling](https://docs.ray.io/en/latest/serve/advanced-guides/advanced-autoscaling.html)
+- [RayService on K8s](https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/rayservice.html)
+- `references/performance.md` — performance tuning and troubleshooting
