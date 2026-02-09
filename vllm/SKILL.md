@@ -29,19 +29,6 @@ vllm serve meta-llama/Llama-3.1-8B-Instruct \
   --port 8000
 ```
 
-### Docker
-
-```bash
-docker run --gpus all \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -p 8000:8000 \
-  --ipc=host \
-  vllm/vllm-openai:latest \
-  --model meta-llama/Llama-3.1-8B-Instruct \
-  --dtype auto \
-  --api-key token-abc123
-```
-
 ### Python API (Offline Inference)
 
 ```python
@@ -341,129 +328,80 @@ vllm serve meta-llama/Llama-3.1-405B-Instruct \
   --distributed-executor-backend ray
 ```
 
-## Kubernetes Deployment
+## Scheduling & Memory Configuration
 
-### Basic Deployment
+### Scheduler Settings
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: vllm-server
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: vllm
-  template:
-    metadata:
-      labels:
-        app: vllm
-    spec:
-      containers:
-        - name: vllm
-          image: vllm/vllm-openai:latest
-          args:
-            - --model=meta-llama/Llama-3.1-8B-Instruct
-            - --dtype=bfloat16
-            - --gpu-memory-utilization=0.9
-            - --max-model-len=8192
-            - --enable-prefix-caching
-            - --port=8000
-          ports:
-            - containerPort: 8000
-          env:
-            - name: HUGGING_FACE_HUB_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: hf-token
-                  key: token
-          resources:
-            limits:
-              nvidia.com/gpu: "1"
-            requests:
-              cpu: "4"
-              memory: "32Gi"
-              nvidia.com/gpu: "1"
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 120
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 180
-            periodSeconds: 30
-          volumeMounts:
-            - name: model-cache
-              mountPath: /root/.cache/huggingface
-            - name: shm
-              mountPath: /dev/shm
-      volumes:
-        - name: model-cache
-          persistentVolumeClaim:
-            claimName: model-cache-pvc
-        - name: shm
-          emptyDir:
-            medium: Memory
-            sizeLimit: 8Gi
-      tolerations:
-        - key: nvidia.com/gpu
-          operator: Exists
-          effect: NoSchedule
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: vllm-server
-spec:
-  selector:
-    app: vllm
-  ports:
-    - port: 8000
-      targetPort: 8000
+```bash
+--scheduling-policy fcfs           # fcfs (default) or priority
+--max-num-seqs 256                 # max concurrent sequences
+--max-num-batched-tokens 32768     # max tokens per scheduler step
+--num-scheduler-steps 1            # multi-step scheduling (>1 = amortize overhead)
+--preemption-mode recompute        # recompute or swap (recompute is faster, swap saves GPU)
 ```
 
-### Autoscaling
+### KV Cache Configuration
 
-```yaml
-apiVersion: autoscaling/v2
-kind: HorizontalPodAutoscaler
-metadata:
-  name: vllm-hpa
-spec:
-  scaleTargetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: vllm-server
-  minReplicas: 1
-  maxReplicas: 4
-  metrics:
-    # Scale on GPU utilization (requires DCGM exporter + Prometheus adapter)
-    - type: Pods
-      pods:
-        metric:
-          name: DCGM_FI_DEV_GPU_UTIL
-        target:
-          type: AverageValue
-          averageValue: "80"
-    # Or scale on pending requests via custom metrics
-    - type: Pods
-      pods:
-        metric:
-          name: vllm_num_requests_waiting
-        target:
-          type: AverageValue
-          averageValue: "10"
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 60
-    scaleDown:
-      stabilizationWindowSeconds: 300  # slow scale-down (GPU pods are expensive to start)
+```bash
+--gpu-memory-utilization 0.90      # fraction of GPU memory for KV cache (after model loaded)
+--kv-cache-dtype auto              # auto, fp8, fp8_e5m2, fp8_e4m3
+--block-size 16                    # KV cache block size (16 or 32)
+--swap-space 4                     # GiB of CPU swap space for preempted sequences
+--cpu-offload-gb 0                 # offload model weights to CPU (reduces GPU usage)
+--num-gpu-blocks-override N        # manually set GPU KV blocks (for testing)
 ```
+
+### Prefix Caching (APC)
+
+```bash
+--enable-prefix-caching            # reuse KV cache for shared prompt prefixes
+```
+
+Dramatically improves throughput when many requests share the same system prompt or few-shot examples. Incompatible with sliding window attention models.
+
+### Chunked Prefill
+
+```bash
+--enable-chunked-prefill           # split prefill into chunks, interleave with decode
+--max-num-batched-tokens 2048      # chunk size; smaller = lower TTFT variance
+```
+
+Reduces head-of-line blocking from long prompts. Essential for mixed-length workloads.
+
+## Tokenizer & Chat Configuration
+
+```bash
+--tokenizer <name>                 # override tokenizer (different from model)
+--chat-template /path/template.jinja  # custom Jinja2 chat template
+--tokenizer-mode auto              # auto or slow (slow = no fast tokenizer)
+--max-logprobs 20                  # max logprobs returnable per token
+--tokenizer-pool-size 0            # >0 = async tokenizer workers
+--tokenizer-pool-type ray          # ray (for distributed tokenizer)
+```
+
+## Model Loading
+
+```bash
+--load-format auto                 # auto, pt, safetensors, npcache, dummy, bitsandbytes
+--download-dir /path               # custom download directory
+--model-loader-extra-config '{}'   # JSON extra config for model loader
+--weights-only                     # only load weights (skip architecture)
+--revision main                    # model revision/branch
+--code-revision main               # code revision for trust_remote_code models
+--config-format auto               # auto, hf, or mistral
+```
+
+## Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `VLLM_ATTENTION_BACKEND` | Override attention backend: `FLASH_ATTN`, `XFORMERS`, `FLASHINFER` |
+| `VLLM_USE_V1` | Enable v1 engine (`1` or `0`) |
+| `CUDA_VISIBLE_DEVICES` | Restrict visible GPUs |
+| `VLLM_WORKER_MULTIPROC_METHOD` | `spawn` or `fork` for worker processes |
+| `VLLM_PP_LAYER_PARTITION` | Custom pipeline parallel layer splits (e.g., `10,22`) |
+| `VLLM_LOGGING_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `HF_TOKEN` | Hugging Face token for gated models |
 
 ## Performance Tuning
 

@@ -239,6 +239,74 @@ CUDA graphs require static shapes. If you see graph-related crashes:
 vllm serve my-model --enforce-eager  # fall back to eager mode
 ```
 
+## LoRA Adapter Issues
+
+### "LoRA adapter not found"
+
+```bash
+# Verify adapter path and enable LoRA
+vllm serve base-model --enable-lora --lora-modules adapter1=/path/to/adapter
+```
+
+### Too many adapters / OOM
+
+```bash
+# Limit concurrent LoRA adapters in memory
+--max-loras 4                   # max loaded simultaneously
+--max-lora-rank 64              # max LoRA rank supported
+--lora-extra-vocab-size 256     # extra vocab for adapter tokens
+```
+
+## Structured Output / Guided Decoding Issues
+
+### "Guided decoding failed" or slow structured output
+
+```bash
+# Switch guided decoding backend
+--guided-decoding-backend outlines    # default
+--guided-decoding-backend lm-format-enforcer
+```
+
+### JSON schema too complex
+
+Large/nested JSON schemas can slow generation. Simplify the schema or increase `--max-num-batched-tokens`.
+
+## Speculative Decoding Issues
+
+### No speedup
+
+- Draft model too different from target — use a model from the same family
+- Draft model too large — should be 5-10x smaller
+- `--num-speculative-tokens` too high — try 3-5
+
+### OOM with speculative decoding
+
+Both models need to fit in memory:
+```bash
+# Use quantized draft model
+vllm serve large-model --speculative-model small-model-AWQ --num-speculative-tokens 5
+```
+
+## Multimodal Issues
+
+### Image processing errors
+
+```bash
+# Limit images per request
+--limit-mm-per-prompt image=4
+
+# Increase max model length for vision models (images consume many tokens)
+--max-model-len 16384
+```
+
+## v1 Engine Issues
+
+The v1 engine (`VLLM_USE_V1=1`) has different behavior:
+
+- Some features not yet supported — check release notes
+- Prefix caching behaves differently
+- `--enforce-eager` may be needed for debugging
+
 ## Health Check and Monitoring
 
 ### Health endpoint
