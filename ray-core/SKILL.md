@@ -313,7 +313,7 @@ for ref in gen:
 ray status
 
 # Dashboard (default port 8265)
-ray dashboard  # or port-forward on K8s
+# Expose dashboard via Ingress/Service on port 8265
 
 # List tasks/actors
 ray list tasks
