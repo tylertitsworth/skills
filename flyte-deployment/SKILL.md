@@ -105,6 +105,86 @@ configuration:
           container_array: k8s-array
 ```
 
+## Multi-Cluster Deployment (flyte-core)
+
+For large-scale production with separate control and data planes:
+
+```bash
+helm install flyte-core flyteorg/flyte-core \
+  --namespace flyte --create-namespace \
+  --values core-values.yaml
+```
+
+Key differences from `flyte-binary`:
+- FlyteAdmin, FlytePropeller, DataCatalog, and FlyteConsole run as separate deployments
+- FlytePropeller can be sharded for parallel workflow execution
+- Supports execution on remote clusters (FlytePropeller per cluster)
+- Horizontal scaling of each component independently
+
+### Multi-Cluster Execution
+
+```yaml
+# In flyte-core values: register remote clusters
+flyteadmin:
+  clusters:
+  - name: gpu-cluster
+    endpoint: https://gpu-cluster.example.com:6443
+    enabled: true
+    auth:
+      type: file_path
+      tokenPath: /var/run/secrets/gpu-cluster-token
+      certPath: /var/run/secrets/gpu-cluster-ca.crt
+```
+
+Each execution cluster runs its own FlytePropeller and requires access to the same database and object store.
+
+## Secrets Management
+
+```yaml
+# In Helm values — inject secrets into task pods
+configuration:
+  inline:
+    secrets:
+      secrets-prefix: "flyte-secret-"   # K8s secrets prefix
+```
+
+Tasks request secrets via `flytekit.current_context().secrets.get("group", "key")`. Create corresponding K8s secrets:
+
+```bash
+kubectl create secret generic flyte-secret-my-group \
+  --from-literal=my-key=secret-value \
+  --namespace flytesnacks-development
+```
+
+## Connector Configuration
+
+FlyteConnector enables external service integrations (e.g., SageMaker, BigQuery, custom APIs):
+
+```yaml
+configuration:
+  inline:
+    plugins:
+      agent-service:
+        defaultAgent:
+          endpoint: "dns:///flyteconnector.flyte.svc.cluster.local:80"
+          insecure: true
+```
+
+## Notification Configuration
+
+```yaml
+configuration:
+  inline:
+    notifications:
+      type: aws        # aws | gcp | sandbox
+      aws:
+        region: us-west-2
+      # Or use webhook
+      # type: webhook
+      # webhook:
+      #   url: https://hooks.slack.com/services/...
+```
+
 ## flytectl CLI
 
 ```bash
@@ -183,14 +263,78 @@ flytectl update task-resource-attribute \
   --attrFile task-resource-attrs.yaml
 ```
 
+## Execution Cluster Labels
+
+Route tasks to specific clusters based on labels:
+
+```yaml
+# In project-domain config
+flytectl update execution-cluster-label \
+  --project ml-team --domain production \
+  --value gpu-cluster
+```
+
+## Caching Configuration
+
+DataCatalog enables memoization — identical task inputs skip re-execution:
+
+```yaml
+configuration:
+  inline:
+    catalog:
+      catalog-cache:
+        endpoint: "dns:///datacatalog.flyte.svc.cluster.local:89"
+        type: datacatalog
+        insecure: true
+```
+
+Tasks opt-in with `@task(cache=True, cache_version="1.0")` in the SDK.
+
+## Storage Configuration
+
+| Provider | Config Key | Notes |
+|---|---|---|
+| AWS S3 | `s3` | Use `authType: iam` with IRSA |
+| GCS | `gcs` | Use Workload Identity |
+| Azure Blob | `azure` | Use Managed Identity |
+| MinIO | `s3` | Set `endpoint` to MinIO URL |
+
+```yaml
+configuration:
+  storage:
+    provider: s3
+    providerConfig:
+      s3:
+        region: us-west-2
+        authType: iam
+        endpoint: ""                # leave empty for AWS S3
+    metadataContainer: flyte-meta
+    userDataContainer: flyte-data
+```
+
+## Key kubectl Commands
+
+```bash
+# Check Flyte components
+kubectl -n flyte get pods
+
+# FlytePropeller logs (execution engine)
+kubectl -n flyte logs deploy/flyte-binary -c flyte-binary | grep -i propeller
+
+# FlyteAdmin logs (API errors)
+kubectl -n flyte logs deploy/flyte-binary | grep -i admin
+
+# Check workflow executions
+flytectl get execution --project my-project --domain development
+
+# Port forward to console
+kubectl -n flyte port-forward svc/flyte-binary 8088:8088 8089:8089
+```
+
 ## Task Plugins
 
 For configuring Spark, Ray, MPI, Dask, and other task plugins, see `references/plugins.md`.
 
-## Authentication
+## Authentication & Operations
 
-For OAuth2/OIDC setup, see `references/auth-and-operations.md`.
-
-## Operations and Troubleshooting
-
-For upgrades, monitoring, scaling, and debugging, see `references/auth-and-operations.md`.
+For OAuth2/OIDC, ingress, upgrades, monitoring, scaling FlytePropeller, and troubleshooting, see `references/auth-and-operations.md`.
