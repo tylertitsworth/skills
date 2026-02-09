@@ -128,7 +128,7 @@ Model and data on different devices. This shouldn't happen if using `prepare_mod
 | Communication timeout | Network issue between nodes | Check firewall, ensure ports open |
 | `CUDA out of memory` | Batch too large or model too large | Reduce batch, use ZeRO/FSDP, mixed precision |
 | `Storage path must be specified` | Multi-node without shared storage | Set `RunConfig(storage_path=...)` |
-| `No module named 'ray.train.huggingface'` | Missing install | `pip install "ray[train]" transformers` |
+| `No module named 'ray.train.huggingface'` | Missing from container image | Add `ray[train]` and `transformers` to image dependencies |
 | Training loss NaN | Learning rate too high or numerical instability | Lower LR, use gradient clipping, check fp16 overflow |
 | `Address already in use` | Port conflict from previous run | Kill stale processes, or set `MASTER_PORT` |
 | Workers die silently | OOM kill by OS | Check `dmesg` for OOM killer, reduce memory |
