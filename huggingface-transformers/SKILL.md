@@ -1,337 +1,264 @@
 ---
 name: huggingface-transformers
 description: >
-  Work with Hugging Face Transformers — the standard library for pretrained models, fine-tuning,
-  and inference. Use when: (1) Loading models and tokenizers from the Hub, (2) Fine-tuning with
-  Trainer API, (3) Using PEFT/LoRA for parameter-efficient fine-tuning, (4) Building inference
-  pipelines, (5) Working with tokenizers (encoding, padding, truncation, special tokens),
-  (6) Managing datasets with the datasets library, (7) Pushing/pulling models from Hugging Face
-  Hub, (8) Configuring training arguments (learning rate, batch size, mixed precision, gradient
-  accumulation), (9) Debugging tokenization or model loading issues.
+  Load, download, and manage HuggingFace models and datasets. Use when:
+  (1) Downloading models and datasets (Python API, HF CLI, git-xet),
+  (2) Loading models with AutoModel classes (dtype, device_map, quantization),
+  (3) Using tokenizers (encoding, decoding, chat templates, special tokens),
+  (4) Managing the HF cache (scan, delete, symlink structure),
+  (5) Using the datasets library (load, filter, map, stream, save),
+  (6) PEFT/LoRA adapter loading and merging,
+  (7) Generation configuration (temperature, top_p, top_k, beam search),
+  (8) Model quantization (BitsAndBytes, GPTQ, AWQ),
+  (9) Using pipelines for quick inference.
 ---
 
-# Hugging Face Transformers
+# HuggingFace Transformers
 
-The standard Python library for pretrained models. Version: **4.46+**. Covers `transformers`, `datasets`, `peft`, `accelerate`, and the Hub.
+HuggingFace ecosystem for model and dataset management. Core libraries: `transformers`, `datasets`, `huggingface_hub`, `tokenizers`, `peft`. Version: **4.46.x+**.
 
-## Setup
+## Downloading Models and Datasets
+
+### HF CLI (`hf` command)
+
+The `hf` CLI is the fastest way to download from the Hub. Add to container image: `huggingface_hub` (includes `hf` CLI) and `hf-xet` (Xet backend for faster downloads).
 
 ```bash
-# Add to container image: transformers datasets accelerate peft
-# Login for gated models (Llama, Gemma, etc.)
-# Set HF_TOKEN env var in pod spec from a K8s Secret
+# Download entire model
+hf download meta-llama/Llama-3.1-8B-Instruct
+
+# Download specific files
+hf download meta-llama/Llama-3.1-8B-Instruct config.json tokenizer.json
+
+# Download with pattern matching
+hf download meta-llama/Llama-3.1-8B-Instruct --include "*.safetensors" --exclude "*.bin"
+
+# Download to specific directory (instead of cache)
+hf download meta-llama/Llama-3.1-8B-Instruct --local-dir /models/llama-8b
+
+# Download a dataset
+hf download HuggingFaceH4/ultrachat_200k --repo-type dataset
+
+# Download specific dataset files
+hf download HuggingFaceH4/ultrachat_200k --repo-type dataset --include "data/train_sft*"
+
+# Download a specific revision/branch
+hf download meta-llama/Llama-3.1-8B-Instruct --revision main
+
+# Quiet mode (just print path)
+hf download gpt2 config.json --quiet
+```
+
+### HF CLI Download Options
+
+| Option | Purpose |
+|---|---|
+| `--repo-type` | Repository type: `model` (default), `dataset`, `space` |
+| `--revision` | Branch, tag, or commit hash |
+| `--include` | Glob pattern for files to include |
+| `--exclude` | Glob pattern for files to exclude |
+| `--local-dir` | Download to directory (copies, no symlinks) |
+| `--local-dir-use-symlinks` | Use symlinks instead of copies | 
+| `--cache-dir` | Custom cache directory |
+| `--token` | Auth token (or use `hf auth login`) |
+| `--quiet` | Only print the path |
+| `--force-download` | Re-download even if cached |
+| `--resume-download` | Resume interrupted download |
+
+### HF CLI Authentication
+
+```bash
+# Interactive login (stores token)
+hf auth login
+
+# Login with token from env var (for K8s containers)
+hf auth login --token $HF_TOKEN --add-to-git-credential
+
+# Check who you're logged in as
+hf auth whoami
+```
+
+In K8s pods, set `HF_TOKEN` env var from a Secret — the SDK and CLI auto-detect it:
+
+```yaml
+env:
+- name: HF_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: hf-secret
+      key: token
+```
+
+### Xet Storage (Faster Downloads)
+
+Xet is HuggingFace's modern storage backend replacing Git LFS. It provides chunk-level deduplication and faster downloads.
+
+**Python (automatic):** `huggingface_hub >= 0.32.0` installs `hf_xet` automatically. No code changes needed — `from_pretrained()`, `hf download`, and `snapshot_download()` all use Xet transparently.
+
+**Git clone with Xet:**
+```bash
+# Install git-xet extension (in container image)
+# curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/huggingface/xet-core/refs/heads/main/git_xet/install.sh | sh
+
+# Clone uses Xet automatically for Xet-backed repos
+git clone https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct
+```
+
+**Xet cache:** Separate from the HF cache. Chunks are cached locally for deduplication across downloads. Manage with `huggingface-cli cache` commands.
+
+### Python Download API
+
+```python
+from huggingface_hub import hf_hub_download, snapshot_download
+
+# Download single file
+path = hf_hub_download(
+    repo_id="meta-llama/Llama-3.1-8B-Instruct",
+    filename="config.json",
+    token=True,                    # use stored token
+)
+
+# Download entire repo
+path = snapshot_download(
+    repo_id="meta-llama/Llama-3.1-8B-Instruct",
+    allow_patterns=["*.safetensors", "*.json"],
+    ignore_patterns=["*.bin"],
+    cache_dir="/models/cache",
+    token=True,
+)
+
+# Download dataset
+path = snapshot_download(
+    repo_id="HuggingFaceH4/ultrachat_200k",
+    repo_type="dataset",
+)
+```
+
+### Environment Variables for Downloads
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `HF_TOKEN` | Authentication token | None |
+| `HF_HOME` | Root for all HF data | `~/.cache/huggingface` |
+| `HF_HUB_CACHE` | Model/dataset cache dir | `$HF_HOME/hub` |
+| `HF_HUB_ENABLE_HF_TRANSFER` | Use hf_transfer for faster downloads | `0` |
+| `HF_HUB_OFFLINE` | Offline mode (cache only) | `0` |
+| `HF_HUB_DOWNLOAD_TIMEOUT` | Download timeout in seconds | `10` |
+| `TRANSFORMERS_CACHE` | Legacy cache dir (use HF_HUB_CACHE) | |
+| `HF_DATASETS_CACHE` | Datasets cache dir | `$HF_HOME/datasets` |
+
+## Cache Management
+
+### HF CLI Cache Commands
+
+```bash
+# Scan cache (show disk usage by repo)
+hf cache scan
+
+# Delete specific revisions interactively
+hf cache delete
+
+# Delete specific repos
+hf cache delete --repo-id meta-llama/Llama-3.1-8B-Instruct
+```
+
+### Python Cache Management
+
+```python
+from huggingface_hub import scan_cache_dir, HfApi
+
+# Scan cache
+cache = scan_cache_dir()
+print(f"Total: {cache.size_on_disk_str}")
+for repo in cache.repos:
+    print(f"  {repo.repo_id}: {repo.size_on_disk_str} ({repo.nb_files} files)")
+
+# Delete specific revisions
+delete_strategy = cache.delete_revisions("abc123def456")
+print(f"Will free {delete_strategy.expected_freed_size_str}")
+delete_strategy.execute()
+```
+
+### Cache Structure
+
+```
+~/.cache/huggingface/hub/
+├── models--meta-llama--Llama-3.1-8B-Instruct/
+│   ├── refs/
+│   │   └── main                    # points to snapshot hash
+│   ├── snapshots/
+│   │   └── abc123.../              # files (or symlinks to blobs)
+│   └── blobs/
+│       └── <sha256>                # actual file content
+└── datasets--HuggingFaceH4--ultrachat_200k/
+    └── ...
 ```
 
 ## Loading Models
 
-### AutoModel Pattern
+### AutoModel Classes
 
 ```python
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model_name = "meta-llama/Llama-3.1-8B-Instruct"
-tokenizer = AutoTokenizer.from_pretrained(model_name)
 model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype="auto",          # uses model's native dtype
-    device_map="auto",           # auto-shard across GPUs
-    attn_implementation="sdpa",  # scaled_dot_product_attention
+    "meta-llama/Llama-3.1-8B-Instruct",
+    torch_dtype="auto",                    # auto-detect dtype
+    device_map="auto",                     # auto-shard across GPUs
+    attn_implementation="flash_attention_2",  # or "sdpa", "eager"
+    trust_remote_code=True,                # for custom model code
+    cache_dir="/models/cache",             # custom cache location
+)
+
+tokenizer = AutoTokenizer.from_pretrained(
+    "meta-llama/Llama-3.1-8B-Instruct",
+    padding_side="left",                   # left-pad for batch generation
+    trust_remote_code=True,
 )
 ```
 
-### AutoModel Variants
+### from_pretrained Settings
 
-| Class | Task |
-|-------|------|
-| `AutoModelForCausalLM` | Text generation (GPT, Llama, Mistral) |
-| `AutoModelForSeq2SeqLM` | Encoder-decoder (T5, BART) |
-| `AutoModelForSequenceClassification` | Text classification |
-| `AutoModelForTokenClassification` | NER, POS tagging |
-| `AutoModelForQuestionAnswering` | Extractive QA |
-| `AutoModelForMaskedLM` | Fill-mask (BERT, RoBERTa) |
-| `AutoModel` | Base model (no task head) |
+| Setting | Purpose | Values |
+|---|---|---|
+| `torch_dtype` | Weight dtype | `"auto"`, `torch.bfloat16`, `torch.float16` |
+| `device_map` | Device placement | `"auto"`, `"cpu"`, `"cuda:0"`, custom dict |
+| `attn_implementation` | Attention backend | `"flash_attention_2"`, `"sdpa"`, `"eager"` |
+| `trust_remote_code` | Allow custom model code | `True`/`False` |
+| `revision` | Model revision | Branch/tag/commit hash |
+| `cache_dir` | Override cache directory | Path string |
+| `low_cpu_mem_usage` | Reduce CPU memory during loading | `True`/`False` |
+| `max_memory` | Max memory per device | `{"cuda:0": "20GiB", "cpu": "40GiB"}` |
 
-### Memory-Efficient Loading
+### device_map Options
 
-```python
-# 4-bit quantization with bitsandbytes
-from transformers import BitsAndBytesConfig
-
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_compute_dtype=torch.bfloat16,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_use_double_quant=True,
-)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    quantization_config=bnb_config,
-    device_map="auto",
-)
-
-# 8-bit loading
-model = AutoModelForCausalLM.from_pretrained(model_name, load_in_8bit=True, device_map="auto")
-```
+| Value | Behavior |
+|---|---|
+| `"auto"` | Automatically shard across all available GPUs, overflow to CPU |
+| `"balanced"` | Evenly split layers across GPUs |
+| `"balanced_low_0"` | Balance but leave GPU 0 lighter (for generation) |
+| `"sequential"` | Fill GPUs sequentially |
+| Custom dict | Manual layer-to-device mapping |
 
 ## Tokenizers
 
+### Core Operations
+
 ```python
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-# Basic encoding
-inputs = tokenizer("Hello, world!", return_tensors="pt")
-# {'input_ids': tensor([[...]]), 'attention_mask': tensor([[...]])}
-
-# Batch encoding with padding and truncation
-inputs = tokenizer(
-    ["Short text.", "A much longer piece of text that needs truncation."],
-    padding=True,          # pad to longest in batch
-    truncation=True,       # truncate to max_length
-    max_length=512,
-    return_tensors="pt",
-)
+# Encode
+tokens = tokenizer("Hello world", return_tensors="pt")
+# tokens.input_ids, tokens.attention_mask
 
 # Decode
 text = tokenizer.decode(token_ids, skip_special_tokens=True)
-texts = tokenizer.batch_decode(batch_ids, skip_special_tokens=True)
 
-# Chat template (for instruct models)
-messages = [
-    {"role": "system", "content": "You are helpful."},
-    {"role": "user", "content": "What is LoRA?"},
-]
-inputs = tokenizer.apply_chat_template(messages, return_tensors="pt", add_generation_prompt=True)
-```
-
-### Tokenizer Configuration
-
-```python
-# Set pad token (required for batch training, many models lack one)
-if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-    model.config.pad_token_id = tokenizer.pad_token_id
-
-# Or add a new pad token
-tokenizer.add_special_tokens({"pad_token": "[PAD]"})
-model.resize_token_embeddings(len(tokenizer))
-```
-
-## Pipelines (Quick Inference)
-
-```python
-from transformers import pipeline
-
-# Text generation
-gen = pipeline("text-generation", model=model_name, device_map="auto", torch_dtype="auto")
-output = gen("Explain transformers:", max_new_tokens=200, temperature=0.7)
-
-# Classification
-classifier = pipeline("text-classification", model="distilbert-base-uncased-finetuned-sst-2-english")
-result = classifier("This model is amazing!")  # [{'label': 'POSITIVE', 'score': 0.99}]
-
-# Embeddings
-embedder = pipeline("feature-extraction", model="BAAI/bge-small-en-v1.5")
-embedding = embedder("Hello world", return_tensors=True)
-```
-
-## Generation
-
-```python
-inputs = tokenizer("The key to efficient training is", return_tensors="pt").to(model.device)
-
-outputs = model.generate(
-    **inputs,
-    max_new_tokens=256,
-    temperature=0.7,
-    top_p=0.9,
-    top_k=50,
-    do_sample=True,
-    repetition_penalty=1.1,
-    num_beams=1,              # 1 = no beam search
-    pad_token_id=tokenizer.pad_token_id,
-)
-
-text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-# Streaming generation
-from transformers import TextStreamer
-streamer = TextStreamer(tokenizer, skip_special_tokens=True)
-model.generate(**inputs, max_new_tokens=256, streamer=streamer)
-```
-
-## Datasets
-
-```python
-from datasets import load_dataset, Dataset
-
-# Load from Hub
-ds = load_dataset("tatsu-lab/alpaca")
-ds = load_dataset("json", data_files="data.jsonl")
-ds = load_dataset("csv", data_files="data.csv")
-
-# Inspect
-print(ds["train"].features)
-print(ds["train"][0])
-
-# Map / transform
-def tokenize_fn(examples):
-    return tokenizer(examples["text"], truncation=True, max_length=512, padding="max_length")
-
-tokenized = ds["train"].map(tokenize_fn, batched=True, num_proc=4, remove_columns=["text"])
-
-# Filter
-filtered = ds["train"].filter(lambda x: len(x["text"]) > 100)
-
-# Train/test split
-split = ds["train"].train_test_split(test_size=0.1, seed=42)
-
-# Create from dict/pandas
-ds = Dataset.from_dict({"text": texts, "label": labels})
-ds = Dataset.from_pandas(df)
-```
-
-## Trainer API
-
-### Basic Fine-Tuning
-
-```python
-from transformers import Trainer, TrainingArguments, DataCollatorWithPadding
-
-training_args = TrainingArguments(
-    output_dir="./results",
-    num_train_epochs=3,
-    per_device_train_batch_size=8,
-    per_device_eval_batch_size=16,
-    gradient_accumulation_steps=4,    # effective batch = 8 × 4 = 32
-    learning_rate=2e-5,
-    weight_decay=0.01,
-    warmup_ratio=0.1,
-    lr_scheduler_type="cosine",
-    bf16=True,                        # mixed precision (A100/H100)
-    # fp16=True,                      # for older GPUs (V100/T4)
-    logging_steps=10,
-    eval_strategy="steps",
-    eval_steps=100,
-    save_strategy="steps",
-    save_steps=500,
-    save_total_limit=3,
-    load_best_model_at_end=True,
-    metric_for_best_model="eval_loss",
-    report_to="wandb",               # or "tensorboard", "none"
-    dataloader_num_workers=4,
-    dataloader_pin_memory=True,
-    gradient_checkpointing=True,      # save memory at cost of speed
-    torch_compile=True,               # PyTorch 2.0+ compilation
-    push_to_hub=False,
-)
-
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_ds,
-    eval_dataset=eval_ds,
-    data_collator=DataCollatorWithPadding(tokenizer),
-    tokenizer=tokenizer,
-)
-
-trainer.train()
-trainer.save_model("./final_model")
-```
-
-### SFTTrainer (from TRL) for Instruction Tuning
-
-```python
-from trl import SFTTrainer, SFTConfig
-
-sft_config = SFTConfig(
-    output_dir="./sft-output",
-    num_train_epochs=3,
-    per_device_train_batch_size=4,
-    gradient_accumulation_steps=8,
-    learning_rate=2e-5,
-    bf16=True,
-    gradient_checkpointing=True,
-    max_seq_length=2048,
-    packing=True,                # pack multiple samples per sequence
-    dataset_text_field="text",
-)
-
-trainer = SFTTrainer(
-    model=model,
-    args=sft_config,
-    train_dataset=train_ds,
-    tokenizer=tokenizer,
-)
-trainer.train()
-```
-
-## PEFT / LoRA
-
-Parameter-efficient fine-tuning — trains <1% of parameters:
-
-```python
-from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
-
-# For quantized models
-model = prepare_model_for_kbit_training(model)
-
-lora_config = LoraConfig(
-    r=16,                         # rank (8-64 typical)
-    lora_alpha=32,                # scaling factor (usually 2×r)
-    target_modules="all-linear",  # or ["q_proj", "v_proj", "k_proj", "o_proj"]
-    lora_dropout=0.05,
-    bias="none",
-    task_type=TaskType.CAUSAL_LM,
-)
-
-model = get_peft_model(model, lora_config)
-model.print_trainable_parameters()
-# trainable params: 13M || all params: 8B || trainable%: 0.16%
-
-# Train with Trainer as normal — only LoRA weights are updated
-
-# Save adapter only (small — ~50MB for a 8B model)
-model.save_pretrained("./lora-adapter")
-
-# Load adapter later
-from peft import PeftModel
-base_model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
-model = PeftModel.from_pretrained(base_model, "./lora-adapter")
-
-# Merge adapter into base (for deployment)
-merged = model.merge_and_unload()
-merged.save_pretrained("./merged-model")
-```
-
-### QLoRA (Quantized LoRA)
-
-```python
-# Combine 4-bit quantization + LoRA = QLoRA
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    quantization_config=bnb_config,  # 4-bit config from earlier
-    device_map="auto",
-)
-model = prepare_model_for_kbit_training(model)
-model = get_peft_model(model, lora_config)
-# Now train — uses ~6GB VRAM for a 7B model
-```
-
-## Text Generation Parameters
-
-```python
-output = model.generate(
-    input_ids,
-    max_new_tokens=256,
-    temperature=0.7,
-    top_p=0.9,
-    top_k=50,
-    repetition_penalty=1.2,
-    do_sample=True,              # False = greedy
-    num_beams=1,                 # >1 = beam search
-    num_return_sequences=1,
-    stop_strings=["<|end|>"],
-    tokenizer=tokenizer,         # required for stop_strings
+# Batch encode
+batch = tokenizer(
+    ["text1", "text2"],
+    padding=True,
+    truncation=True,
+    max_length=4096,
+    return_tensors="pt",
 )
 ```
 
@@ -340,128 +267,208 @@ output = model.generate(
 ```python
 messages = [
     {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "Hello!"},
+    {"role": "user", "content": "What is 2+2?"},
 ]
-prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
-# Or tokenize directly
-inputs = tokenizer.apply_chat_template(messages, return_tensors="pt", add_generation_prompt=True)
-output = model.generate(inputs.to(model.device), max_new_tokens=256)
-response = tokenizer.decode(output[0][inputs.shape[-1]:], skip_special_tokens=True)
+# Apply chat template
+text = tokenizer.apply_chat_template(
+    messages,
+    tokenize=False,                # return string, not tokens
+    add_generation_prompt=True,    # add assistant turn prefix
+)
+
+# Tokenize directly
+tokens = tokenizer.apply_chat_template(
+    messages,
+    return_tensors="pt",
+    add_generation_prompt=True,
+)
+```
+
+## Datasets Library
+
+### Loading Datasets
+
+```python
+from datasets import load_dataset
+
+# From Hub
+ds = load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft")
+
+# Specific config/subset
+ds = load_dataset("gsm8k", "main", split="train")
+
+# From local files
+ds = load_dataset("json", data_files="train.jsonl")
+ds = load_dataset("parquet", data_files="data/*.parquet")
+ds = load_dataset("csv", data_files="data.csv")
+
+# Streaming (no download, lazy loading)
+ds = load_dataset("HuggingFaceH4/ultrachat_200k", split="train_sft", streaming=True)
+for example in ds:
+    process(example)
+```
+
+### Dataset Operations
+
+```python
+# Filter
+ds = ds.filter(lambda x: len(x["text"]) > 100)
+
+# Map (transform)
+ds = ds.map(tokenize_fn, batched=True, num_proc=8, remove_columns=["text"])
+
+# Select columns
+ds = ds.select_columns(["input_ids", "attention_mask", "labels"])
+
+# Shuffle and select
+ds = ds.shuffle(seed=42).select(range(10000))
+
+# Train/test split
+ds = ds.train_test_split(test_size=0.1, seed=42)
+
+# Save processed dataset
+ds.save_to_disk("/data/processed")
+ds.to_parquet("/data/processed.parquet")
+
+# Load from disk
+from datasets import load_from_disk
+ds = load_from_disk("/data/processed")
+```
+
+### Dataset Caching
+
+The datasets library caches processed results automatically. Control with:
+
+| Setting | Purpose |
+|---|---|
+| `HF_DATASETS_CACHE` | Cache directory |
+| `ds.map(..., cache_file_name=...)` | Explicit cache file |
+| `ds.map(..., load_from_cache_file=False)` | Disable cache |
+| `datasets.disable_caching()` | Global cache disable |
+
+## PEFT / LoRA
+
+### Loading Adapters
+
+```python
+from peft import PeftModel, PeftConfig
+
+# Load base model + adapter
+config = PeftConfig.from_pretrained("my-org/llama-8b-lora")
+base_model = AutoModelForCausalLM.from_pretrained(config.base_model_name_or_path)
+model = PeftModel.from_pretrained(base_model, "my-org/llama-8b-lora")
+
+# Merge adapter into base model (for inference)
+model = model.merge_and_unload()
+```
+
+### LoRA Configuration
+
+```python
+from peft import LoraConfig, get_peft_model
+
+lora_config = LoraConfig(
+    r=16,                              # rank
+    lora_alpha=32,                     # scaling factor
+    target_modules=["q_proj", "v_proj", "k_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM",
+)
+
+model = get_peft_model(base_model, lora_config)
+model.print_trainable_parameters()
+```
+
+## Generation Configuration
+
+### GenerationConfig Settings
+
+| Setting | Purpose | Default |
+|---|---|---|
+| `max_new_tokens` | Max tokens to generate | Model default |
+| `temperature` | Sampling randomness (0 = greedy) | `1.0` |
+| `top_p` | Nucleus sampling threshold | `1.0` |
+| `top_k` | Top-K sampling | `50` |
+| `do_sample` | Enable sampling (vs greedy) | `False` |
+| `num_beams` | Beam search width | `1` |
+| `repetition_penalty` | Penalize repeated tokens | `1.0` |
+| `no_repeat_ngram_size` | Block repeated n-grams | `0` |
+| `stop_strings` | Stop on these strings | None |
+| `eos_token_id` | End-of-sequence token(s) | Model default |
+
+```python
+output = model.generate(
+    **tokens,
+    max_new_tokens=512,
+    temperature=0.7,
+    top_p=0.9,
+    do_sample=True,
+    repetition_penalty=1.1,
+)
 ```
 
 ## Model Quantization
 
-### GPTQ (Post-Training Quantization)
+### BitsAndBytes (4-bit / 8-bit)
 
 ```python
-from transformers import GPTQConfig
+from transformers import BitsAndBytesConfig
 
-quantization_config = GPTQConfig(bits=4, dataset="c4", tokenizer=tokenizer)
+bnb_config = BitsAndBytesConfig(
+    load_in_4bit=True,
+    bnb_4bit_quant_type="nf4",          # nf4 or fp4
+    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_use_double_quant=True,      # nested quantization
+)
+
 model = AutoModelForCausalLM.from_pretrained(
-    model_name, quantization_config=quantization_config, device_map="auto"
+    "meta-llama/Llama-3.1-70B-Instruct",
+    quantization_config=bnb_config,
+    device_map="auto",
 )
 ```
 
-### AWQ
+### Pre-Quantized Models (GPTQ, AWQ)
 
 ```python
-from transformers import AwqConfig
+# GPTQ — auto-detected from config
+model = AutoModelForCausalLM.from_pretrained("TheBloke/Llama-2-7B-GPTQ")
 
-quantization_config = AwqConfig(bits=4, fuse_max_seq_len=512)
-model = AutoModelForCausalLM.from_pretrained(
-    "TheBloke/Llama-2-7B-AWQ", quantization_config=quantization_config, device_map="auto"
-)
+# AWQ — auto-detected from config
+model = AutoModelForCausalLM.from_pretrained("TheBloke/Llama-2-7B-AWQ")
 ```
 
-## Evaluation
+## Pipelines (Quick Inference)
 
 ```python
-import evaluate
+from transformers import pipeline
 
-# Load metrics
-accuracy = evaluate.load("accuracy")
-bleu = evaluate.load("bleu")
-rouge = evaluate.load("rouge")
-
-# Compute
-results = accuracy.compute(predictions=preds, references=labels)
-
-# With Trainer — pass compute_metrics
-def compute_metrics(eval_pred):
-    logits, labels = eval_pred
-    preds = logits.argmax(-1)
-    return accuracy.compute(predictions=preds, references=labels)
-
-trainer = Trainer(model=model, args=args, compute_metrics=compute_metrics, ...)
-```
-
-## Model Parallelism
-
-```python
-# Automatic device mapping (splits across GPUs)
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    device_map="auto",          # auto-split across available GPUs
-    torch_dtype=torch.bfloat16,
+pipe = pipeline(
+    "text-generation",
+    model="meta-llama/Llama-3.1-8B-Instruct",
+    torch_dtype="auto",
+    device_map="auto",
 )
 
-# Custom device map
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    device_map={
-        "model.embed_tokens": 0,
-        "model.layers.0-15": 0,
-        "model.layers.16-31": 1,
-        "model.norm": 1,
-        "lm_head": 1,
-    },
+result = pipe(
+    [{"role": "user", "content": "What is 2+2?"}],
+    max_new_tokens=256,
+    temperature=0.7,
 )
-
-# Check device map
-print(model.hf_device_map)
-```
-
-## Hub Operations
-
-```python
-from huggingface_hub import HfApi
-
-# Push model to Hub
-model.push_to_hub("myorg/my-model", private=True)
-tokenizer.push_to_hub("myorg/my-model")
-
-# Push with a model card
-from huggingface_hub import ModelCard
-card = ModelCard.from_template(
-    card_data={"license": "mit", "tags": ["pytorch", "llama"]},
-    model_id="myorg/my-model",
-)
-card.push_to_hub("myorg/my-model")
-
-# Download specific files
-api = HfApi()
-api.hf_hub_download("meta-llama/Llama-3.1-8B-Instruct", "config.json")
-
-# Snapshot download (full model)
-from huggingface_hub import snapshot_download
-snapshot_download("meta-llama/Llama-3.1-8B-Instruct", local_dir="./model")
 ```
 
 ## Debugging
 
-See `references/troubleshooting.md` for:
-- Model loading failures (OOM, auth, architecture mismatches)
-- Tokenizer issues (pad token, chat template, special tokens)
-- Training issues (loss not decreasing, NaN, gradient explosion)
-- PEFT/LoRA problems (target modules, merge errors)
-- Common generation issues (repetition, empty output, wrong tokens)
+See `references/troubleshooting.md` for common loading, download, and generation issues.
 
 ## Reference
 
-- [Transformers docs](https://huggingface.co/docs/transformers)
-- [PEFT docs](https://huggingface.co/docs/peft)
-- [Datasets docs](https://huggingface.co/docs/datasets)
-- [TRL docs](https://huggingface.co/docs/trl)
-- [Hub Python Library](https://huggingface.co/docs/huggingface_hub)
+- [Transformers docs](https://huggingface.co/docs/transformers/)
+- [HuggingFace Hub docs](https://huggingface.co/docs/huggingface_hub/)
+- [Datasets docs](https://huggingface.co/docs/datasets/)
+- [PEFT docs](https://huggingface.co/docs/peft/)
+- [HF CLI reference](https://huggingface.co/docs/huggingface_hub/en/guides/cli)
+- [Xet storage](https://huggingface.co/docs/hub/en/xet/using-xet-storage)
 - `references/troubleshooting.md` — common errors and fixes
