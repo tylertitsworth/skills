@@ -356,3 +356,7 @@ groups:
 | `rate(metric[1s])` | Range smaller than scrape interval | Use range ≥ 4x scrape interval |
 | `irate()` in alerting rules | Too volatile | Use `rate()` |
 | Very high cardinality in `by()` | Query timeout | Reduce label dimensions, use recording rules |
+
+## Cross-References
+
+- [logql](../logql/) — LogQL for Loki log queries (PromQL-inspired syntax)
