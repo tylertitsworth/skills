@@ -23,12 +23,12 @@ NVIDIA Megatron-LM is the framework for training transformer models at scale. It
 
 ```bash
 # Install Megatron Core
-pip install --no-build-isolation megatron-core[mlm,dev]
+# Add to container image: pip install --no-build-isolation megatron-core[mlm,dev]
 
 # Clone for training scripts
 git clone https://github.com/NVIDIA/Megatron-LM.git
 cd Megatron-LM
-pip install --no-build-isolation .[mlm,dev]
+# Or from source: pip install --no-build-isolation .[mlm,dev]
 ```
 
 **Requirements**: NVIDIA GPUs (A100/H100), CUDA 12+, PyTorch 2.4+, NCCL, Apex (optional for FP8).
@@ -256,7 +256,7 @@ Megatron saves sharded checkpoints — each TP/PP rank saves its shard.
 Use [Megatron Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge):
 
 ```bash
-pip install megatron-bridge
+# Add to container image: megatron-bridge
 
 # Megatron → HuggingFace
 python -m megatron.bridge.convert \
@@ -361,7 +361,7 @@ python tools/preprocess_data.py \
 Convert HuggingFace ↔ Megatron checkpoints:
 
 ```bash
-pip install megatron-bridge
+# Add to container image: megatron-bridge
 
 # HuggingFace → Megatron
 python -m megatron.bridge.convert \

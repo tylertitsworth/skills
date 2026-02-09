@@ -173,7 +173,7 @@ Expected MFU: 40-50% on H100. If significantly lower:
 
 ```bash
 # Ensure flash attention is installed
-pip install flash-attn --no-build-isolation
+# Add to container image: flash-attn (build from source)
 
 # Enable in config
 --attention-implementation flash_attention_2
