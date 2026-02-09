@@ -447,6 +447,81 @@ kubectl describe raycluster <name>   # events: CreatedService, CreatedHeadPod, C
 kubectl describe rayjob <name>       # events: job submission, completion, failure
 ```
 
+## kubectl ray Plugin
+
+The KubeRay kubectl plugin (beta, v1.3.0+) simplifies common cluster management tasks.
+
+### Installation
+
+```bash
+# Via Krew (recommended)
+kubectl krew install ray
+
+# Or download binary
+curl -LO https://github.com/ray-project/kuberay/releases/download/v1.5.1/kubectl-ray_v1.5.1_linux_amd64.tar.gz
+tar -xvf kubectl-ray_v1.5.1_linux_amd64.tar.gz
+cp kubectl-ray ~/.local/bin/
+```
+
+### Cluster Management
+
+```bash
+# Create a RayCluster without YAML
+kubectl ray create cluster my-cluster \
+  --worker-replicas 4 \
+  --worker-gpu 1 \
+  --worker-memory 32Gi \
+  --ray-version 2.53.0
+
+# Add a worker group
+kubectl ray create workergroup gpu-group --ray-cluster my-cluster \
+  --worker-gpu 1 --worker-memory 64Gi --worker-replicas 2
+
+# List clusters and nodes
+kubectl ray get cluster
+kubectl ray get workergroup --ray-cluster my-cluster
+kubectl ray get nodes
+
+# Scale a worker group
+kubectl ray scale cluster my-cluster --worker-group gpu-group --replicas 8
+
+# Delete
+kubectl ray delete my-cluster
+```
+
+### Sessions, Logs, and Job Submission
+
+```bash
+# Port-forward to Ray dashboard + client port
+kubectl ray session my-cluster
+# → Ray Dashboard: http://localhost:8265
+# → Ray Interactive Client: http://localhost:10001
+
+# Download all logs from a cluster
+kubectl ray log my-cluster
+# Creates ./my-cluster/ directory with head + worker logs
+
+# Submit a job (wraps ray job submit with auto port-forward)
+kubectl ray job submit --ray-cluster my-cluster -- python train.py --epochs 10
+
+# Submit with working directory
+kubectl ray job submit --ray-cluster my-cluster \
+  --working-dir ./src -- python train.py
+
+# Submit with an ephemeral cluster (no existing cluster needed)
+kubectl ray job submit -- python train.py
+```
+
+### When to Use kubectl ray vs Raw kubectl
+
+| Task | kubectl ray | kubectl |
+|---|---|---|
+| Quick cluster creation | ✅ `create cluster` (no YAML) | Need full RayCluster YAML |
+| Interactive sessions | ✅ `session` (auto port-forward) | Manual `port-forward` |
+| Log collection | ✅ `log` (downloads all nodes) | Manual per-pod `kubectl logs` |
+| Job submission | ✅ `job submit` (auto-forward) | Create RayJob YAML |
+| Complex configs (TLS, GCS FT) | Use kubectl apply | ✅ Full YAML control |
+
 ## Key kubectl Commands
 
 ```bash
