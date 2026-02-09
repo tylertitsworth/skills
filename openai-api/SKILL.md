@@ -154,6 +154,100 @@ data: {"id":"chatcmpl-abc","object":"chat.completion.chunk","choices":[{"index":
 data: [DONE]
 ```
 
+## Reasoning / Thinking Models
+
+Models like `o1`, `o3`, `o3-mini`, and `o4-mini` use extended reasoning (chain-of-thought) before responding.
+
+### Basic Usage
+
+```python
+response = client.chat.completions.create(
+    model="o3-mini",
+    messages=[{"role": "user", "content": "Prove that sqrt(2) is irrational."}],
+    reasoning_effort="medium",    # low | medium | high
+)
+print(response.choices[0].message.content)
+
+# Access reasoning tokens usage
+print(response.usage.completion_tokens_details.reasoning_tokens)
+```
+
+### Reasoning Effort
+
+| Level | Behavior | Use Case |
+|---|---|---|
+| `low` | Minimal reasoning, faster | Simple tasks, classification |
+| `medium` | Balanced | General use |
+| `high` | Extended reasoning, slower | Math proofs, complex code, hard problems |
+
+### Key Differences from Chat Models
+
+- **No `system` role** — use `developer` role instead (o1/o3):
+  ```python
+  messages=[
+      {"role": "developer", "content": "You are a math tutor."},
+      {"role": "user", "content": "Solve this integral..."},
+  ]
+  ```
+- **No `temperature`** — reasoning models control their own sampling
+- **No `top_p`, `frequency_penalty`, `presence_penalty`** — not supported
+- **`max_completion_tokens`** instead of `max_tokens` — includes both reasoning and visible tokens
+- **Streaming** works but reasoning tokens are not streamed (only the final answer)
+
+### Streaming with Reasoning
+
+```python
+stream = client.chat.completions.create(
+    model="o3-mini",
+    messages=[{"role": "user", "content": "Explain P=NP"}],
+    stream=True,
+    reasoning_effort="high",
+    stream_options={"include_usage": True},
+)
+for chunk in stream:
+    # Reasoning tokens are hidden — you only see the final response
+    if chunk.choices and chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+```
+
+### Reasoning with Tool Calling
+
+Reasoning models support tool calling — they reason about which tools to call:
+
+```python
+response = client.chat.completions.create(
+    model="o3-mini",
+    messages=[{"role": "user", "content": "What's the weather in SF and NYC?"}],
+    tools=tools,
+    reasoning_effort="low",   # low effort sufficient for tool selection
+)
+```
+
+### Reasoning with Structured Output
+
+```python
+response = client.beta.chat.completions.parse(
+    model="o3-mini",
+    messages=[{"role": "user", "content": "Analyze this code for bugs: ..."}],
+    response_format=BugReport,  # Pydantic model
+    reasoning_effort="high",
+)
+```
+
+### Cost Considerations
+
+Reasoning tokens count toward output tokens and are billed at the output rate. A `high` effort response might use 5,000-50,000 reasoning tokens before producing a 500-token answer. Monitor `usage.completion_tokens_details.reasoning_tokens`.
+
+### Backend Support
+
+| Feature | OpenAI | vLLM | Ollama | LiteLLM |
+|---|---|---|---|---|
+| Reasoning models | ✅ (o1, o3, o4-mini) | ❌ | Partial (DeepSeek-R1) | Via proxy |
+| `reasoning_effort` | ✅ | ❌ | ❌ | Via proxy |
+| `developer` role | ✅ | ❌ | ❌ | Via proxy |
+
+**Open-source reasoning:** DeepSeek-R1 and QwQ expose thinking in `<think>` tags within the response content. They use standard chat completions (not the reasoning API), so they work with any backend.
+
 ## Tool Calling (Function Calling)
 
 ### Define Tools
