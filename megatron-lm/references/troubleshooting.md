@@ -4,19 +4,17 @@
 
 ### Rank crashed ("remote process exited")
 
-One rank crashed — check all ranks' logs. Common causes:
-1. OOM on one rank
-2. GPU hardware error: `nvidia-smi -q -d ECC`
-3. Network partition between nodes
+One rank crashed — check pod logs across all replicas. Common causes:
+1. OOM on one rank — check container exit codes and resource limits
+2. GPU hardware error — check node-level DCGM exporter metrics
+3. Network partition between nodes — verify pod-to-pod connectivity and Service endpoints
 
 ### Hang during initialization
 
-All ranks must reach `torch.distributed.init_process_group` simultaneously:
-```bash
-# Verify all nodes can reach master
-ping $MASTER_ADDR
-nc -zv $MASTER_ADDR 29500
-```
+All ranks must reach `torch.distributed.init_process_group` simultaneously. Verify:
+- `MASTER_ADDR` and `MASTER_PORT` env vars are correctly set in the pod spec
+- Network policies allow inter-pod communication on the master port (default 29500)
+- All pods are scheduled and running before the timeout expires
 
 ## OOM Issues
 
