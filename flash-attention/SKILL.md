@@ -258,3 +258,12 @@ Flash Attention is O(N) memory in sequence length (vs O(N²) for vanilla attenti
 - Use sliding window attention (`window_size` parameter)
 - Enable Ring Attention for multi-GPU sequence parallelism
 - Consider chunked prefill in inference engines
+
+## Cross-References
+
+- [pytorch](../pytorch/) — PyTorch training and `F.scaled_dot_product_attention`
+- [fsdp](../fsdp/) — FSDP distributed training (uses SDPA internally)
+- [megatron-lm](../megatron-lm/) — Megatron-LM attention with context parallelism / Ring Attention
+- [vllm](../vllm/) — vLLM inference engine (uses PagedAttention internally)
+- [huggingface-transformers](../huggingface-transformers/) — `attn_implementation` parameter for model loading
+- [torch-compile](../torch-compile/) — Compiling attention kernels with `torch.compile`
