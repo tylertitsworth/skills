@@ -19,7 +19,7 @@ verl is a production-ready RL training framework for LLMs. Supports PPO, GRPO, D
 ## Setup
 
 ```bash
-pip install verl
+# Add to container image: verl
 # Or from source for latest features
 git clone https://github.com/verl-project/verl.git && cd verl && pip install -e .
 ```
