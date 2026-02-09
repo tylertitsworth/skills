@@ -240,6 +240,125 @@ async for token in response:
     print(token, end="")
 ```
 
+## gRPC Support
+
+```python
+from ray import serve
+from ray.serve.generated import serve_pb2, serve_pb2_grpc
+
+@serve.deployment
+class GRPCModel:
+    async def Predict(self, request: serve_pb2.PredictRequest) -> serve_pb2.PredictResponse:
+        return serve_pb2.PredictResponse(output=f"Result for {request.input}")
+
+# Configure gRPC in Serve config:
+# grpc_options:
+#   port: 9000
+#   grpc_servicer_functions: ["serve_pb2_grpc.add_PredictServiceServicer_to_server"]
+```
+
+## Multiplexed Models
+
+Serve many model variants with a single deployment using model multiplexing:
+
+```python
+@serve.deployment(num_replicas=4)
+class MultiModelServer:
+    def __init__(self):
+        self.models = {}
+
+    def get_model(self, model_id: str):
+        if model_id not in self.models:
+            self.models[model_id] = load_model(model_id)
+        return self.models[model_id]
+
+    async def __call__(self, request: Request):
+        data = await request.json()
+        model = self.get_model(data["model_id"])
+        return model.predict(data["input"])
+```
+
+For built-in multiplexing with LRU eviction:
+
+```python
+@serve.deployment
+class MultiplexedLLM:
+    @serve.multiplexed(max_num_models_per_replica=3)
+    async def get_model(self, model_id: str):
+        return load_model(model_id)
+
+    async def __call__(self, request: Request):
+        model_id = serve.get_multiplexed_model_id()
+        model = await self.get_model(model_id)
+        return model.predict(await request.json())
+```
+
+## Logging and Metrics
+
+```python
+import logging
+from ray.serve.metrics import Counter, Histogram
+
+logger = logging.getLogger("ray.serve")
+
+@serve.deployment
+class MonitoredModel:
+    def __init__(self):
+        self.request_counter = Counter(
+            "my_model_requests_total",
+            description="Total requests",
+            tag_keys=("model_name",),
+        )
+        self.latency_histogram = Histogram(
+            "my_model_latency_seconds",
+            description="Request latency",
+            boundaries=[0.01, 0.05, 0.1, 0.5, 1.0, 5.0],
+        )
+
+    async def __call__(self, request):
+        self.request_counter.inc(tags={"model_name": "bert"})
+        with self.latency_histogram.time():
+            return self.model.predict(await request.json())
+```
+
+Built-in Prometheus metrics exposed on port 9090 by default.
+
+## Serve Config File
+
+Declarative deployment without Python:
+
+```yaml
+# serve_config.yaml
+proxy_location: EveryNode           # or HeadOnly, Disabled
+http_options:
+  host: 0.0.0.0
+  port: 8000
+grpc_options:
+  port: 9000
+applications:
+- name: my-app
+  route_prefix: /
+  import_path: my_module:app
+  runtime_env:
+    pip: ["transformers", "torch"]
+  deployments:
+  - name: MyModel
+    num_replicas: auto
+    autoscaling_config:
+      target_ongoing_requests: 2
+      min_replicas: 1
+      max_replicas: 10
+    max_ongoing_requests: 5
+    ray_actor_options:
+      num_gpus: 1
+    health_check_period_s: 10
+```
+
+```bash
+serve deploy serve_config.yaml
+serve status
+```
+
 ## Kubernetes Deployment (RayService)
 
 Deploy via KubeRay's RayService CRD. See the **kuberay** skill's `references/rayservice.md` for full details.
