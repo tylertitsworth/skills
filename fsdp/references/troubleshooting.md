@@ -19,8 +19,6 @@ loss = model(batch)  # ensure all ranks get a batch (use drop_last=True)
 **Debug:**
 ```bash
 export TORCH_DISTRIBUTED_DEBUG=DETAIL
-export NCCL_DEBUG=INFO
-export NCCL_TIMEOUT=300
 ```
 
 ### Hang during initialization
