@@ -27,10 +27,10 @@ tritonserver --model-repository=/models --log-verbose=1
    model_name/1/model.py     # Python
    ```
 
-3. **Missing dependencies**: Python backend models need deps in the container:
-   ```bash
-   # Add to Dockerfile or install at runtime
-   pip install transformers torchvision
+3. **Missing dependencies**: Python backend models need deps in the container image:
+   ```dockerfile
+   # Add to your Triton Dockerfile
+   RUN pip install transformers torchvision
    ```
 
 ### "no version available"
