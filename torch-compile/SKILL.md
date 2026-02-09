@@ -265,3 +265,10 @@ Compiled code may produce slightly different floating-point results due to kerne
 model = torch.compile(model, options={"fallback_random": True})
 torch.use_deterministic_algorithms(True)
 ```
+
+## Cross-References
+
+- [pytorch](../pytorch/) — PyTorch fundamentals and training loops
+- [fsdp](../fsdp/) — FSDP + torch.compile integration ordering
+- [flash-attention](../flash-attention/) — Attention backends that torch.compile can fuse
+- [vllm](../vllm/) — vLLM uses torch.compile internally for inference optimization
