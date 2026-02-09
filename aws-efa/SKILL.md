@@ -401,3 +401,11 @@ spec:
 | NCCL timeout during training | Nodes in different AZs | All EFA nodes must be same AZ for placement group |
 | "No EFA devices found" | Instance type doesn't support EFA | Verify instance type with `aws ec2 describe-instance-types --filters Name=network-info.efa-supported,Values=true` |
 | p6-b200 EFA not working | Old device plugin | Upgrade EFA device plugin to ≥ v0.5.6 |
+
+## Cross-References
+
+- [aws-fsx](../aws-fsx/) — FSx storage for training data on EFA-enabled nodes
+- [pytorch](../pytorch/) — PyTorch distributed training over EFA
+- [fsdp](../fsdp/) — FSDP distributed training using EFA for all-reduce
+- [megatron-lm](../megatron-lm/) — Megatron-LM multi-node training over EFA
+- [ray-train](../ray-train/) — Ray Train distributed jobs on EFA-enabled clusters
