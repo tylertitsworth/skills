@@ -17,9 +17,9 @@ The standard Python library for pretrained models. Version: **4.46+**. Covers `t
 ## Setup
 
 ```bash
-pip install transformers datasets accelerate peft
+# Add to container image: transformers datasets accelerate peft
 # Login for gated models (Llama, Gemma, etc.)
-huggingface-cli login
+# Set HF_TOKEN env var in pod spec from a K8s Secret
 ```
 
 ## Loading Models

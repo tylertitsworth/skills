@@ -20,7 +20,7 @@ model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.bfloa
 Model requires access approval:
 1. Go to the model page on huggingface.co and accept the license
 2. Login: `huggingface-cli login` with a token from https://huggingface.co/settings/tokens
-3. Or set: `export HUGGING_FACE_HUB_TOKEN="hf_..."`
+3. Or set `HF_TOKEN` env var in the container spec via a K8s Secret
 
 ### "OSError: Can't load config for 'model-name'"
 
