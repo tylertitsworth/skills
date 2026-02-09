@@ -499,6 +499,67 @@ Not all Kueue features compose freely. Key incompatibilities:
 - `spec.active: false` — deactivates workload (evicts if admitted)
 - `spec.maximumExecutionTimeSeconds: N` — auto-evict after N seconds
 
+## kueuectl CLI Plugin
+
+Install the kubectl-kueue plugin for streamlined Kueue management:
+
+```bash
+# Install via Krew (recommended)
+kubectl krew install kueue
+
+# Or download binary directly
+curl -Lo ./kubectl-kueue https://github.com/kubernetes-sigs/kueue/releases/download/v0.16.0/kubectl-kueue-linux-amd64
+chmod +x ./kubectl-kueue && sudo mv ./kubectl-kueue /usr/local/bin/kubectl-kueue
+
+# Optional alias
+alias kueuectl="kubectl kueue"
+```
+
+### Commands
+
+```bash
+# List resources
+kubectl kueue list clusterqueues
+kubectl kueue list localqueues -n my-namespace
+kubectl kueue list workloads -n my-namespace
+
+# Create resources
+kubectl kueue create clusterqueue my-cq \
+  --nominal-quota cpu=10,memory=64Gi,nvidia.com/gpu=8 \
+  --cohort default-cohort
+kubectl kueue create localqueue my-lq -n my-namespace \
+  --clusterqueue my-cq
+kubectl kueue create resourceflavor gpu-flavor \
+  --node-labels cloud.provider.com/accelerator=nvidia-a100
+
+# Resume suspended workloads
+kubectl kueue resume workload my-workload -n my-namespace
+kubectl kueue resume localqueue my-lq -n my-namespace
+kubectl kueue resume clusterqueue my-cq
+
+# Stop (suspend) workloads/queues
+kubectl kueue stop workload my-workload -n my-namespace
+kubectl kueue stop localqueue my-lq -n my-namespace
+kubectl kueue stop clusterqueue my-cq
+
+# Passthrough — standard kubectl commands with Kueue context
+kubectl kueue get clusterqueue my-cq -o yaml
+kubectl kueue describe workload my-workload -n my-namespace
+
+# Version
+kubectl kueue version
+```
+
+### When to Use kueuectl vs kubectl
+
+| Task | kueuectl | kubectl |
+|---|---|---|
+| Create CQ with quota inline | ✅ `create clusterqueue --nominal-quota` | ❌ Need full YAML |
+| Resume/stop workloads | ✅ `resume workload` / `stop workload` | Manual patch of `spec.active` |
+| List with Kueue-aware formatting | ✅ `list workloads` | Generic `get workloads` |
+| View pending workloads | Use kubectl visibility API | `get --raw /apis/visibility...` |
+| Complex YAML resources | Use kubectl apply | Use kubectl apply |
+
 ## Key kubectl Commands
 
 ```bash
