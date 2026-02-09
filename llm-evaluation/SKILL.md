@@ -16,9 +16,9 @@ Evaluate language models using [lm-evaluation-harness](https://github.com/Eleuth
 ## Setup
 
 ```bash
-pip install lm-eval
+# Add to container image: lm-eval
 # With vLLM backend
-pip install lm-eval[vllm]
+# With vLLM backend: lm-eval[vllm]
 ```
 
 ## Quick Start
@@ -310,7 +310,7 @@ For structured LLM-as-judge, see [MT-Bench](https://github.com/lm-sys/FastChat/t
 ### lighteval
 
 ```bash
-pip install lighteval
+# Add to container image: lighteval
 lighteval accelerate --model_args pretrained=my-model \
   --tasks "leaderboard|mmlu:5|0,leaderboard|gsm8k|0" \
   --output_dir ./results
