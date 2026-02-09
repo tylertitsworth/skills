@@ -4,30 +4,13 @@
 
 ### Working offline
 
-When no network is available (air-gapped cluster, train on a node without internet):
+For air-gapped clusters or nodes without internet, set `WANDB_MODE=offline` in the container env. Or per-run: `wandb.init(mode="offline")`.
 
-```bash
-# Set offline mode
-export WANDB_MODE="offline"
-
-# Or per-run
-wandb.init(mode="offline")
-```
-
-Runs are saved to `./wandb/offline-run-*` directories.
+Runs are saved to `./wandb/offline-run-*` directories inside the container. Mount a PVC to persist them.
 
 ### Syncing offline runs
 
-```bash
-# Sync a single run
-wandb sync ./wandb/offline-run-20240101_120000-abc123
-
-# Sync all offline runs in a directory
-wandb sync --sync-all ./wandb/
-
-# Sync to a specific project
-wandb sync --project my-project ./wandb/offline-run-*
-```
+Create a separate Job or CronJob that mounts the same PVC and runs `wandb sync --sync-all /data/wandb/` to sync offline runs when network is available.
 
 ### Sync failures
 
@@ -64,14 +47,9 @@ run.log_artifact(artifact)
 W&B caches downloaded artifacts locally:
 
 ```bash
-# Default cache location
-~/.cache/wandb/artifacts/
-
-# Change cache directory
-export WANDB_CACHE_DIR="/data/wandb-cache"
-
-# Clear cache
-wandb artifact cache cleanup 10G  # keep only 10GB
+# Default cache location: ~/.cache/wandb/artifacts/
+# Set WANDB_CACHE_DIR env var in pod spec to use a PVC-backed path
+# e.g., WANDB_CACHE_DIR="/data/wandb-cache"
 ```
 
 ### Deduplication
@@ -110,10 +88,12 @@ run = wandb.init(
 
 ### Auto-resume with environment variable
 
-```bash
-# Set in your training script launcher
-export WANDB_RUN_ID="unique-run-id"
-export WANDB_RESUME="allow"
+Set in the container env:
+```yaml
+- name: WANDB_RUN_ID
+  value: "unique-run-id"     # or generate from job name/UID
+- name: WANDB_RESUME
+  value: "allow"
 ```
 
 ### Saving run ID for crash recovery
@@ -193,13 +173,14 @@ run.watch(model, log="gradients", log_freq=500)  # only gradients, less often
 
 ### "wandb: ERROR api key not configured"
 
-```bash
-# Set API key
-export WANDB_API_KEY="your-key"
-# Or login interactively
-wandb login
-# Or use a file
-echo "your-key" > ~/.netrc  # wandb reads netrc
+Set `WANDB_API_KEY` env var in the pod spec, sourced from a K8s Secret:
+```yaml
+env:
+- name: WANDB_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: wandb-secret
+      key: api-key
 ```
 
 ### "CommError: Could not find run"
@@ -249,10 +230,4 @@ wandb.init(settings=wandb.Settings(
 
 ### Disable wandb entirely for debugging
 
-```bash
-export WANDB_DISABLED=true
-# or
-wandb.init(mode="disabled")
-```
-
-This creates a no-op run — all `log()` calls succeed but nothing is recorded.
+Set `WANDB_DISABLED=true` in the container env, or use `wandb.init(mode="disabled")` in code. Creates a no-op run — all `log()` calls succeed but nothing is recorded.

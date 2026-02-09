@@ -15,18 +15,23 @@ W&B is the ML experiment tracking, artifact versioning, and model registry platf
 
 ## Setup
 
-```bash
-pip install wandb
-wandb login  # paste API key from wandb.ai/authorize
-```
+Add `wandb` to your container image dependencies. Configure via env vars in your pod spec:
 
-**Environment variables:**
-```bash
-export WANDB_API_KEY="your-key"           # API key (skips interactive login)
-export WANDB_PROJECT="my-project"         # default project
-export WANDB_ENTITY="my-team"             # team/org name
-export WANDB_BASE_URL="https://wandb.example.com"  # self-hosted server URL
-export WANDB_MODE="offline"               # offline mode (no network)
+```yaml
+env:
+- name: WANDB_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: wandb-secret
+      key: api-key
+- name: WANDB_PROJECT
+  value: "my-project"
+- name: WANDB_ENTITY
+  value: "my-team"
+- name: WANDB_BASE_URL          # for self-hosted W&B
+  value: "https://wandb.example.com"
+- name: WANDB_MODE              # "offline" for air-gapped clusters
+  value: "online"
 ```
 
 ## Experiment Tracking
@@ -166,10 +171,12 @@ trainer = Trainer(
 trainer.train()
 ```
 
-**Environment variable shortcut:**
-```bash
-export WANDB_PROJECT="hf-experiments"
-export WANDB_LOG_MODEL="checkpoint"  # log model checkpoints as artifacts
+**Container env vars:**
+```yaml
+- name: WANDB_PROJECT
+  value: "hf-experiments"
+- name: WANDB_LOG_MODEL
+  value: "checkpoint"  # log model checkpoints as artifacts
 ```
 
 ### PyTorch Lightning
@@ -446,11 +453,7 @@ EOF
 kubectl apply -f wandb-values.yaml
 ```
 
-**Point clients at self-hosted server:**
-```bash
-export WANDB_BASE_URL="https://wandb.example.com"
-wandb login --host https://wandb.example.com
-```
+**Point clients at self-hosted server** — set `WANDB_BASE_URL` env var in pod specs:
 
 ## Debugging
 
