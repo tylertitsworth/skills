@@ -19,13 +19,8 @@ NVIDIA Triton is a multi-framework inference server supporting ONNX, TensorRT, P
 
 ## Quick Start
 
-```bash
-# Pull Triton container
-docker run --gpus all --rm -p 8000:8000 -p 8001:8001 -p 8002:8002 \
-  -v $(pwd)/model_repository:/models \
-  nvcr.io/nvidia/tritonserver:24.12-py3 \
-  tritonserver --model-repository=/models
-```
+Container image: `nvcr.io/nvidia/tritonserver:24.12-py3`
+Command: `tritonserver --model-repository=/models`
 
 **Ports:**
 - `8000` — HTTP/REST

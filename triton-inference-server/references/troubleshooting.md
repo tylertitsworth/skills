@@ -220,7 +220,4 @@ volumes:
 
 ### Models not loading from PVC
 
-Ensure the PVC is mounted and contains the correct directory structure. Check permissions:
-```bash
-kubectl exec -it triton-pod -- ls -la /models/
-```
+Ensure the PVC is mounted and contains the correct directory structure. Check the init container logs or use a debug pod to verify the PVC contents and permissions.
