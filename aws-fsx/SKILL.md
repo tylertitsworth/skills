@@ -1,25 +1,16 @@
 ---
 name: aws-fsx
-description: Amazon FSx for Lustre and FSx for NetApp ONTAP on EKS — CSI drivers, StorageClass configuration, S3 integration, and ML storage patterns. Use when configuring FSx storage for Kubernetes workloads on EKS, setting up training data pipelines, checkpoint storage, or shared model weight storage.
+description: Amazon FSx for Lustre on EKS — CSI driver, StorageClass configuration, S3 data repository integration, and ML storage patterns. Use when configuring FSx for Lustre storage on EKS for training data, checkpoints, or shared model weights.
 ---
 
-# AWS FSx on EKS
+# AWS FSx for Lustre on EKS
 
-## FSx for Lustre vs FSx for NetApp ONTAP
-
-| Feature | FSx for Lustre | FSx for NetApp ONTAP |
-|---------|---------------|---------------------|
-| Protocol | Lustre (POSIX) | NFS, iSCSI, SMB |
-| Throughput | Up to hundreds of GB/s | Up to 4 GB/s per FS |
-| Latency | Sub-millisecond | Sub-millisecond (NFS) |
-| S3 integration | Native (data repository) | Via DataSync |
-| CSI driver | `fsx.csi.aws.com` (kubernetes-sigs) | `csi.trident.netapp.io` (NetApp Trident) |
-| Dynamic provisioning | Yes | Yes |
-| Multi-AZ | No (single subnet) | Yes |
-| Snapshots | No | Yes (FlexClone, SnapMirror) |
-| Best for | High-throughput training data, large-scale reads | Shared storage, checkpoints, multi-protocol access |
-
-## FSx for Lustre
+Amazon FSx for Lustre is a fully managed high-performance parallel filesystem. Key properties for ML workloads:
+- **Throughput**: Up to hundreds of GB/s aggregate
+- **Latency**: Sub-millisecond
+- **S3 integration**: Native data repository — lazy-loads S3 objects as Lustre files
+- **Access mode**: ReadWriteMany (multiple pods across nodes)
+- **Protocol**: Lustre (POSIX-compatible)
 
 ### CSI Driver Installation
 
@@ -243,134 +234,7 @@ FSx for Lustre supports `ReadWriteMany` — multiple pods across multiple nodes 
 - Security group must allow **inbound TCP port 988** (Lustre protocol)
 - For best performance, place EKS nodes and FSx filesystem in the **same Availability Zone**
 
-## FSx for NetApp ONTAP
-
-### Trident CSI Driver Installation
-
-```bash
-# As EKS Marketplace add-on
-aws eks create-addon \
-  --cluster-name my-cluster \
-  --addon-name netapp_trident-operator
-
-# Or via Helm
-helm repo add netapp-trident https://netapp.github.io/trident-helm-chart
-helm install trident netapp-trident/trident-operator \
-  -n trident --create-namespace
-```
-
-### Backend Configuration
-
-```yaml
-apiVersion: trident.netapp.io/v1
-kind: TridentBackendConfig
-metadata:
-  name: fsxn-backend
-  namespace: trident
-spec:
-  version: 1
-  storageDriverName: ontap-nas        # NFS protocol
-  backendName: fsxn
-  svm: svm-0123456789abcdef0
-  aws:
-    fsxFilesystemID: fs-0123456789abcdef0
-  managementLIF: 198.19.255.4         # FSxN management endpoint
-  credentials:
-    name: fsxn-credentials             # Secret with vsadmin password
-    namespace: trident
-```
-
-Backend driver options:
-
-| Driver | Protocol | Access Modes | Use Case |
-|--------|----------|-------------|----------|
-| `ontap-nas` | NFS | ReadWriteMany, ReadWriteOnce | Shared data, multi-pod access |
-| `ontap-nas-economy` | NFS (qtrees) | ReadWriteMany, ReadWriteOnce | Many small volumes (cost-optimized) |
-| `ontap-san` | iSCSI | ReadWriteOnce | Block storage, single-writer |
-| `ontap-san-economy` | iSCSI (LUNs) | ReadWriteOnce | Many small block volumes |
-
-### StorageClass
-
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: fsxn-sc
-provisioner: csi.trident.netapp.io
-parameters:
-  backendType: ontap-nas
-  storagePools: "fsxn:.*"
-  snapshotPolicy: default              # Enable snapshots
-  snapshotReserve: "10"                # Reserve 10% for snapshots
-allowVolumeExpansion: true
-reclaimPolicy: Retain
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: model-weights
-spec:
-  accessModes: [ReadWriteMany]
-  storageClassName: fsxn-sc
-  resources:
-    requests:
-      storage: 500Gi
-```
-
-### Key Trident StorageClass Parameters
-
-| Parameter | Values | Effect |
-|-----------|--------|--------|
-| `backendType` | `ontap-nas`, `ontap-san`, etc. | Storage driver type |
-| `storagePools` | `backend:pool-pattern` | Pool selection filter |
-| `snapshotPolicy` | `default`, `none`, custom | Automatic snapshot policy |
-| `snapshotReserve` | `0`-`90` | Percentage reserved for snapshots |
-| `encryption` | `true`/`false` | Volume encryption |
-| `unixPermissions` | `0777` etc. | NFS permissions for new volumes |
-| `exportPolicy` | policy name | NFS export policy |
-| `tieringPolicy` | `none`, `snapshot-only`, `auto`, `all` | Tiering to capacity pool |
-
-### Advantages for ML Workloads
-
-- **Snapshots**: Snapshot checkpoints without copying data (FlexClone). Restore to any point instantly.
-- **Volume expansion**: Grow PVCs online without downtime
-- **Multi-AZ**: Unlike Lustre, ONTAP supports multi-AZ for HA
-- **Data tiering**: Automatically tier cold data to cheaper capacity pool storage
-- **Cloning**: Create writable clones of datasets for experiment branches (space-efficient)
-
-```yaml
-# Create a clone of an existing PVC (via VolumeSnapshot)
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: experiment-branch
-spec:
-  accessModes: [ReadWriteMany]
-  storageClassName: fsxn-sc
-  resources:
-    requests:
-      storage: 500Gi
-  dataSource:
-    name: model-weights-snapshot
-    kind: VolumeSnapshot
-    apiGroup: snapshot.storage.k8s.io
-```
-
-## Choosing Between Lustre and ONTAP
-
-| Scenario | Recommendation | Why |
-|----------|---------------|-----|
-| Large-scale training data reads from S3 | **Lustre** | Native S3 integration, highest throughput |
-| Checkpoint storage with snapshots | **ONTAP** | FlexClone, instant restore |
-| Multi-AZ requirement | **ONTAP** | Lustre is single-AZ only |
-| Shared model weights across pods | Either | Both support ReadWriteMany |
-| Short-lived training jobs | **Lustre SCRATCH** | Cheapest, auto-delete with PVC |
-| Multiple protocols (NFS + iSCSI) | **ONTAP** | Multi-protocol support |
-| Data-intensive preprocessing | **Lustre** | Higher aggregate throughput |
-
 ## Troubleshooting
-
-### FSx Lustre
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
@@ -379,15 +243,6 @@ spec:
 | Slow first reads from S3 | Lazy loading on first access | Pre-warm with `lfs hsm_restore` or prefetch |
 | CSI driver pods not running | Missing IAM permissions | Check Pod Identity / IRSA role |
 | "filesystem not found" on static PV | Wrong `volumeHandle` or `dnsname` | Verify filesystem ID and DNS name in AWS console |
-
-### FSx for NetApp ONTAP
-
-| Issue | Cause | Fix |
-|-------|-------|-----|
-| Trident backend failed | Wrong management LIF or credentials | Verify `managementLIF` and Secret |
-| NFS mount failed | SVM export policy blocking | Check export policy allows EKS node CIDR |
-| Volume expansion failed | ONTAP aggregate full | Check aggregate space, add capacity |
-| Slow performance | Wrong tiering policy | Set `tieringPolicy: none` for hot data |
 
 ## Cross-References
 
