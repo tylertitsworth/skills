@@ -388,3 +388,10 @@ spec:
 | NFS mount failed | SVM export policy blocking | Check export policy allows EKS node CIDR |
 | Volume expansion failed | ONTAP aggregate full | Check aggregate space, add capacity |
 | Slow performance | Wrong tiering policy | Set `tieringPolicy: none` for hot data |
+
+## Cross-References
+
+- [aws-efa](../aws-efa/) — EFA networking for the GPU nodes consuming FSx storage
+- [ray-train](../ray-train/) — Distributed training jobs that consume FSx-backed PVCs
+- [kueue](../kueue/) — Queue training jobs that mount FSx volumes
+- [megatron-lm](../megatron-lm/) — Large-scale training with shared checkpoint storage
