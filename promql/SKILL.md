@@ -103,6 +103,65 @@ metric_a / on(job) group_right(extra_label) metric_b
 
 `group_left` = many-to-one (left has more series). `group_right` = one-to-many. Extra labels from the "one" side can be copied into the result.
 
+### Merging Metrics with Different Label Names
+
+A common problem: two metrics describe the same entity but use different label names (e.g., `hostname` vs `node_name` vs `node` vs `instance`). PromQL has no direct "join on different label names" — you must relabel first.
+
+**Pattern 1: `label_replace` to create a shared label**
+
+```promql
+# GPU metrics use "Hostname", node metrics use "node"
+# Create a common "node" label on GPU metrics, then join
+label_replace(DCGM_FI_DEV_GPU_UTIL, "node", "$1", "Hostname", "(.*)")
+  * on(node) group_left()
+kube_node_info
+```
+
+**Pattern 2: `label_join` to combine labels**
+
+```promql
+# Create a composite label from multiple source labels
+label_join(metric, "combined", "-", "namespace", "pod")
+```
+
+**Pattern 3: Use an info metric as a lookup table**
+
+Many exporters provide "info" metrics (value always 1) with multiple labels. Use `group_left` to enrich:
+
+```promql
+# kube_pod_info has labels: pod, node, namespace, host_ip, pod_ip
+# DCGM metrics have: pod, namespace, gpu
+# Join to get node name on GPU metrics
+DCGM_FI_DEV_GPU_UTIL
+  * on(namespace, pod) group_left(node)
+kube_pod_info
+```
+
+**Pattern 4: Chained `label_replace` for complex mappings**
+
+```promql
+# node_exporter uses "instance" (ip:port), kube metrics use "node" (hostname)
+# Step 1: Extract hostname from instance
+label_replace(
+  node_memory_MemAvailable_bytes,
+  "node", "$1", "instance", "(.*):.*"
+)
+# Step 2: Join with kube metrics
+* on(node) group_left()
+kube_node_status_capacity{resource="memory"}
+```
+
+**Common label name mismatches in ML/K8s environments**:
+
+| Source | Label | Contains |
+|--------|-------|----------|
+| DCGM exporter | `Hostname` | Node hostname |
+| node_exporter | `instance` | `hostname:port` |
+| kube-state-metrics | `node` | Node name |
+| kube-state-metrics | `pod` | Pod name |
+| cAdvisor | `container`, `pod` | Container/pod name |
+| NVIDIA GPU Operator | `gpu`, `UUID` | GPU index/UUID |
+
 ## Aggregation Operators
 
 ```promql
