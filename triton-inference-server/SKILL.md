@@ -307,7 +307,7 @@ ensemble_scheduling {
 ### Python Client
 
 ```bash
-pip install tritonclient[all]
+# Add to client container image: tritonclient[all]
 ```
 
 ```python
