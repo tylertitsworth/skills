@@ -1,0 +1,81 @@
+# Prometheus alerting rules for GPU training clusters.
+# Deploy as a PrometheusRule CRD or include in Prometheus config.
+# Assumes DCGM exporter metrics (DCGM_FI_*) and kube-state-metrics.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: gpu-training-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: gpu-health
+      interval: 30s
+      rules:
+        # GPU temperature critical
+        - alert: GPUTemperatureCritical
+          expr: DCGM_FI_DEV_GPU_TEMP > 85
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "GPU {{ $labels.gpu }} on {{ $labels.instance }} temperature critical"
+            description: "GPU temp is {{ $value }}°C (threshold: 85°C)"
+
+        # GPU memory utilization sustained high
+        - alert: GPUMemoryExhausted
+          expr: DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL > 0.95
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GPU {{ $labels.gpu }} memory > 95% on {{ $labels.instance }}"
+
+        # GPU utilization drop (potential straggler or hang)
+        - alert: GPUUtilizationDrop
+          expr: |
+            DCGM_FI_DEV_GPU_UTIL < 10
+            and ON(namespace, pod)
+            kube_pod_status_phase{phase="Running"} == 1
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: "GPU {{ $labels.gpu }} idle on running pod {{ $labels.pod }}"
+            description: "GPU utilization {{ $value }}% for 15m while pod is Running"
+
+        # XID errors (hardware/driver errors)
+        - alert: GPUXidErrors
+          expr: rate(DCGM_FI_DEV_XID_ERRORS[5m]) > 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "GPU XID errors on {{ $labels.instance }} GPU {{ $labels.gpu }}"
+
+    - name: training-health
+      interval: 60s
+      rules:
+        # Training job stuck (no GPU activity)
+        - alert: TrainingJobStuck
+          expr: |
+            sum by (namespace, pod) (DCGM_FI_DEV_GPU_UTIL) == 0
+            and ON(namespace, pod)
+            kube_pod_labels{label_app="training"} == 1
+          for: 30m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Training pod {{ $labels.pod }} has 0% GPU utilization for 30m"
+
+        # Recording rules for dashboards
+        - record: gpu:utilization:avg_by_node
+          expr: avg by (node) (DCGM_FI_DEV_GPU_UTIL)
+
+        - record: gpu:memory_used_pct:avg_by_node
+          expr: avg by (node) (DCGM_FI_DEV_FB_USED / DCGM_FI_DEV_FB_TOTAL)
+
+        - record: gpu:power_usage_watts:avg_by_node
+          expr: avg by (node) (DCGM_FI_DEV_POWER_USAGE)

@@ -426,3 +426,4 @@ See `references/troubleshooting.md` for:
 - [Accelerate FSDP docs](https://huggingface.co/docs/accelerate/usage_guides/fsdp)
 - `references/troubleshooting.md` — common errors and fixes
 - `assets/fsdp2_training.py` — minimal FSDP2 training example with mixed precision, torch.compile, and distributed checkpointing
+- `assets/architecture.md` — Mermaid architecture diagrams

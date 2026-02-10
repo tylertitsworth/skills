@@ -257,3 +257,4 @@ Flash Attention is O(N) memory in sequence length (vs O(N²) for vanilla attenti
 - [FlashAttention-3 GitHub](https://github.com/Dao-AILab/flash-attention/tree/main/hopper)
 - [PyTorch SDPA docs](https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html)
 - [FlexAttention blog](https://pytorch.org/blog/flexattention/)
+- `scripts/check_attention_backend.py` — check available SDPA backends and benchmark them across dtypes

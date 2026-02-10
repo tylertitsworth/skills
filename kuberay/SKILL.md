@@ -575,3 +575,5 @@ For debugging common KubeRay issues, see `references/troubleshooting.md`.
 - `references/troubleshooting.md` — common KubeRay issues
 - `assets/rayjob-training.yaml` — RayJob manifest for distributed GPU training with Kueue integration
 - `assets/rayservice-vllm.yaml` — RayService manifest deploying vLLM with autoscaling
+
+- `assets/architecture.md` — Mermaid architecture diagrams

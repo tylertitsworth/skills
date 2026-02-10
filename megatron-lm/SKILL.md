@@ -235,3 +235,4 @@ See `references/troubleshooting.md` for:
 - [Megatron Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge)
 - `references/troubleshooting.md` — common errors and fixes
 - `assets/pretrain_llama.sh` — launch script for Llama-style pretraining with TP, distributed optimizer, selective recomputation, and torch_dist checkpoints
+- `assets/architecture.md` — Mermaid architecture diagrams

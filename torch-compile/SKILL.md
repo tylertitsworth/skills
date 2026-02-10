@@ -279,3 +279,4 @@ torch.use_deterministic_algorithms(True)
 - [TorchDynamo deep dive](https://pytorch.org/docs/stable/torch.compiler_deepdive.html)
 - [TorchInductor docs](https://pytorch.org/docs/stable/torch.compiler_inductor_profiling.html)
 - [Troubleshooting guide](https://pytorch.org/docs/stable/torch.compiler_troubleshooting.html)
+- `scripts/diagnose_graph_breaks.py` — diagnose graph breaks and benchmark compiled vs eager performance

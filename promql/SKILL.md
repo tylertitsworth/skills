@@ -429,3 +429,4 @@ groups:
 - [PromQL operators](https://prometheus.io/docs/prometheus/latest/querying/operators/)
 - [PromQL functions](https://prometheus.io/docs/prometheus/latest/querying/functions/)
 - [Recording rules](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/)
+- `assets/gpu_alerts.yaml` — PrometheusRule with GPU health alerts (temperature, OOM, utilization drop, XID errors) and recording rules

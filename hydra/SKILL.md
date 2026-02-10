@@ -493,6 +493,7 @@ For `--multirun`: `hydra.sweep.dir=/custom/sweep/path`.
 - [Defaults List](https://hydra.cc/docs/advanced/defaults_list/)
 - [Compose API](https://hydra.cc/docs/advanced/compose_api/)
 - `references/omegaconf.md` — OmegaConf resolvers, interpolation, MISSING, operations
+- `assets/train_config.yaml` — example Hydra config for ML training with model, data, trainer, and W&B groups
 
 ## Cross-References
 

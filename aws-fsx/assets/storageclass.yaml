@@ -1,0 +1,41 @@
+# FSx for Lustre StorageClass with S3 data repository association.
+# Creates a PERSISTENT_2 filesystem linked to an S3 bucket for training data.
+# Requires: FSx CSI driver installed (aws-fsx-csi-driver).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fsx-lustre-persistent
+provisioner: fsx.csi.aws.com
+parameters:
+  # Filesystem type: PERSISTENT_2 for production (SSD-backed, configurable IOPS)
+  deploymentType: PERSISTENT_2
+  # Storage capacity per unit: 1200 MB/s/TiB throughput
+  perUnitStorageThroughput: "250"
+  # Subnet where FSx filesystem is created (must match EKS nodes)
+  subnetId: subnet-0abc123def456789
+  # Security group allowing Lustre traffic (port 988)
+  securityGroupIds: sg-0abc123def456789
+  # S3 data repository — auto-import data to Lustre
+  s3ImportPath: s3://my-training-data-bucket
+  s3ExportPath: s3://my-training-data-bucket/exports
+  autoImportPolicy: NEW_CHANGED_DELETED
+  # File chunk size for S3 imports (1048576 = 1MiB, good for many small files)
+  importedFileChunkSize: "1048576"
+  # Data compression (LZ4 reduces storage cost ~50%)
+  dataCompressionType: LZ4
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+---
+# PVC for training jobs (1.2 TiB minimum for PERSISTENT_2)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: training-data
+  namespace: ml-training
+spec:
+  accessModes:
+    - ReadWriteMany    # Lustre supports multi-node access
+  storageClassName: fsx-lustre-persistent
+  resources:
+    requests:
+      storage: 1200Gi   # Minimum for PERSISTENT_2

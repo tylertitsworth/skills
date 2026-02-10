@@ -610,3 +610,5 @@ For installation options, Helm configuration, KueueConfiguration reference, metr
 - `references/troubleshooting.md` — common issues and fixes
 - `assets/clusterqueue.yaml` — complete ClusterQueue + ResourceFlavor + LocalQueue example with GPU quotas, borrowing, and fair sharing
 - `assets/tas-training-job.yaml` — Topology-Aware Scheduling Job for distributed GPU training
+
+- `assets/architecture.md` — Mermaid architecture diagrams

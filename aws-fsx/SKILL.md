@@ -339,3 +339,4 @@ See `references/troubleshooting.md` for common issues.
 - [FSx CSI driver](https://github.com/kubernetes-sigs/aws-fsx-csi-driver)
 - [FSx pricing](https://aws.amazon.com/fsx/lustre/pricing/)
 - `references/troubleshooting.md` — mount issues, performance, data repository tasks
+- `assets/storageclass.yaml` — FSx Lustre StorageClass with S3 data repository, LZ4 compression, and PVC example
