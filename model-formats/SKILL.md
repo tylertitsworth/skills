@@ -282,3 +282,4 @@ optimization {
 - [GGUF spec](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md)
 - [ONNX spec](https://onnx.ai/onnx/intro/)
 - [HuggingFace Optimum](https://huggingface.co/docs/optimum/)
+- `scripts/convert_hf_to_gguf.sh` — convert HuggingFace model to GGUF with optional quantization

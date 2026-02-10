@@ -429,3 +429,4 @@ See `references/performance.md` for performance tuning and troubleshooting.
 - [Advanced autoscaling](https://docs.ray.io/en/latest/serve/advanced-guides/advanced-autoscaling.html)
 - [RayService on K8s](https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/rayservice.html)
 - `references/performance.md` — performance tuning and troubleshooting
+- `assets/serve_config.yaml` — ServeConfigV2 example with multi-model deployment and autoscaling
