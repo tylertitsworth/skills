@@ -472,6 +472,7 @@ See `references/troubleshooting.md` for common loading, download, and generation
 - [HF CLI reference](https://huggingface.co/docs/huggingface_hub/en/guides/cli)
 - [Xet storage](https://huggingface.co/docs/hub/en/xet/using-xet-storage)
 - `references/troubleshooting.md` — common errors and fixes
+- `scripts/download_model.py` — download HF models/datasets with authentication, revision, and file filtering
 
 ## Cross-References
 
