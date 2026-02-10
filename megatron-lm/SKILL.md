@@ -234,3 +234,4 @@ See `references/troubleshooting.md` for:
 - [Megatron Core docs](https://docs.nvidia.com/Megatron-Core/)
 - [Megatron Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge)
 - `references/troubleshooting.md` — common errors and fixes
+- `assets/pretrain_llama.sh` — launch script for Llama-style pretraining with TP, distributed optimizer, selective recomputation, and torch_dist checkpoints

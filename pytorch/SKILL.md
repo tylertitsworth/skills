@@ -495,3 +495,4 @@ See `references/troubleshooting.md` for:
 - [torch.compile tutorial](https://pytorch.org/tutorials/intermediate/torch_compile_tutorial.html)
 - [FSDP tutorial](https://pytorch.org/tutorials/intermediate/FSDP_tutorial.html)
 - `references/troubleshooting.md` — common errors and fixes
+- `scripts/benchmark_matmul.py` — GPU matmul throughput benchmark across dtypes and sizes
