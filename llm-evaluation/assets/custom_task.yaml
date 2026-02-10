@@ -1,0 +1,52 @@
+# Custom lm-evaluation-harness task definition.
+# Evaluates a model's ability to answer ML infrastructure questions.
+#
+# Place in: lm_eval/tasks/ml_infra/ml_infra.yaml
+# Run with: lm_eval --tasks ml_infra --model vllm --model_args pretrained=...
+#
+# See: https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/new_task_guide.md
+
+task: ml_infra
+dataset_path: json
+dataset_name: null
+# Point to a JSONL file with {"question": "...", "answer": "..."} lines
+dataset_kwargs:
+  data_files:
+    test: ml_infra_questions.jsonl
+output_type: generate_until
+doc_to_text: "Question: {{question}}\nAnswer:"
+doc_to_target: "{{answer}}"
+generation_kwargs:
+  max_gen_toks: 256
+  temperature: 0.0
+  do_sample: false
+  until:
+    - "\n\n"
+    - "Question:"
+filter_list:
+  - name: strip_answer
+    filter:
+      - function: regex
+        regex_pattern: "^\\s*(.*?)\\s*$"
+        group_select: 1
+      - function: take_first
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+  - metric: bleu
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0
+  description: "ML infrastructure knowledge evaluation"
+---
+# Task group that combines standard benchmarks for ML model evaluation
+group: ml_eval_suite
+task:
+  - mmlu
+  - hellaswag
+  - arc_challenge
+  - truthfulqa_mc2
+  - gsm8k
+  - ml_infra

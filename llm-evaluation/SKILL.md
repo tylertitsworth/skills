@@ -327,3 +327,4 @@ For structured LLM-as-judge, see [MT-Bench](https://github.com/lm-sys/FastChat/t
 - [Task YAML guide](https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/new_task_guide.md)
 - [Open LLM Leaderboard](https://huggingface.co/spaces/open-llm-leaderboard/open_llm_leaderboard)
 - `references/benchmarks.md` — detailed benchmark descriptions and scoring baselines
+- `assets/custom_task.yaml` — example custom evaluation task with generate_until, regex filter, and task group definition

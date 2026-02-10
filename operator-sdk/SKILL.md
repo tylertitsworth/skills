@@ -507,3 +507,4 @@ See `references/troubleshooting.md` for:
 - [controller-runtime godoc](https://pkg.go.dev/sigs.k8s.io/controller-runtime)
 - [API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)
 - `references/troubleshooting.md` — common errors and fixes
+- `scripts/scaffold.sh` — scaffold a new operator project (usage: `./scaffold.sh <domain> <group> <kind>`)

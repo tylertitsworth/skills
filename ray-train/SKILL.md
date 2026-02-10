@@ -352,4 +352,5 @@ For communication errors, OOM, slow data loading, and common training issues, se
 - [TorchTrainer API](https://docs.ray.io/en/latest/train/api/doc/ray.train.torch.TorchTrainer.html)
 - [Ray Train examples](https://docs.ray.io/en/latest/train/examples.html)
 - `references/troubleshooting.md` — common errors and fixes
+- `assets/train_llm.py` — complete Ray Train LLM fine-tuning example with FSDP, checkpointing, fault tolerance, and Ray Data integration
 - `assets/architecture.md` — Mermaid architecture diagrams

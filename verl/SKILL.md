@@ -471,4 +471,5 @@ See `references/troubleshooting.md` for:
 - [verl recipes](https://github.com/verl-project/verl-recipe)
 - [HybridFlow paper (EuroSys 2025)](https://arxiv.org/abs/2409.19256)
 - `references/troubleshooting.md` — common errors and fixes
+- `assets/grpo_config.yaml` — complete GRPO training config with vLLM rollout, math reward, W&B logging, and DAPO variant comments
 - `assets/architecture.md` — Mermaid architecture diagrams

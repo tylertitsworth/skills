@@ -1,0 +1,47 @@
+# Topology-Aware Scheduling (TAS) training Job.
+# Ensures all pods land on GPUs within the same rack for low-latency NCCL.
+# Requires: Kueue v0.14+ with TopologyAwareScheduling feature gate enabled,
+# and a Topology resource + ResourceFlavor with topologyName configured.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: distributed-training
+  namespace: ml-team
+  labels:
+    kueue.x-k8s.io/queue-name: training-queue
+spec:
+  parallelism: 4
+  completions: 4
+  completionMode: Indexed
+  template:
+    metadata:
+      annotations:
+        # All 4 pods must be scheduled within the same rack
+        kueue.x-k8s.io/podset-required-topology: cloud.provider.com/topology-rack
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: trainer
+          image: nvcr.io/nvidia/pytorch:24.12-py3
+          command:
+            - torchrun
+            - --nnodes=4
+            - --nproc_per_node=1
+            - --rdzv_backend=c10d
+            - --rdzv_endpoint=$(JOB_COMPLETION_INDEX)
+            - train.py
+          resources:
+            requests:
+              cpu: "8"
+              memory: 64Gi
+              nvidia.com/gpu: "1"
+            limits:
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi

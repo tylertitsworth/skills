@@ -513,3 +513,4 @@ See `references/troubleshooting.md` for:
 - [Python SDK Reference](https://docs.wandb.ai/models/ref/python)
 - [Public API Reference](https://docs.wandb.ai/ref/python/public-api/)
 - `references/troubleshooting.md` — common errors and fixes
+- `scripts/sweep_agent.py` — W&B Sweep agent for Bayesian hyperparameter tuning with early termination

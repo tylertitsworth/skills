@@ -322,4 +322,5 @@ For performance tuning, memory management, and troubleshooting, see `references/
 - [Ray Data docs](https://docs.ray.io/en/latest/data/data.html)
 - [Ray Data API](https://docs.ray.io/en/latest/data/api/doc/ray.data.Dataset.html)
 - `references/performance.md` — performance tuning and memory management
+- `assets/preprocess_pipeline.py` — Ray Data pipeline with CPU tokenization, GPU embedding, and parquet I/O
 

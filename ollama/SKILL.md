@@ -422,3 +422,4 @@ Use Ollama for development, prototyping, and single-user inference. Use vLLM for
 - [Ollama API reference](https://github.com/ollama/ollama/blob/main/docs/api.md)
 - [Modelfile reference](https://github.com/ollama/ollama/blob/main/docs/modelfile.md)
 - [Ollama model library](https://ollama.com/library)
+- `assets/Modelfile.example` — example Modelfile for a custom coding assistant with system prompt, parameters, and template

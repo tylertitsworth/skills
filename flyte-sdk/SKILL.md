@@ -482,4 +482,5 @@ See `references/troubleshooting.md` for:
 - [Flyte user guide](https://docs.flyte.org/en/latest/user_guide/)
 - [FlytePropeller architecture](https://docs-legacy.flyte.org/en/latest/user_guide/concepts/component_architecture/flytepropeller_architecture.html)
 - `references/troubleshooting.md` — common errors and fixes
+- `assets/ml_workflow.py` — complete Flyte ML pipeline: data prep → training → evaluation with ImageSpec, GPU resources, caching
 - `assets/architecture.md` — Mermaid architecture diagrams

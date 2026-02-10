@@ -482,4 +482,6 @@ See `references/troubleshooting.md` for:
 - `references/troubleshooting.md` — common errors and fixes
 - `references/disaggregated-serving.md` — PD separation architecture and connectors
 - `references/lmcache.md` — KV cache sharing and CPU offloading
+- `scripts/benchmark_serving.py` — benchmark vLLM throughput and latency (TTFT, TPOT, p50/p90/p99)
+- `assets/deployment.yaml` — K8s Deployment + Service with GPU, model cache PVC, health probes, and Prometheus annotations
 - `assets/architecture.md` — Mermaid architecture diagrams
