@@ -1,0 +1,52 @@
+# MiniMax-M1 — Disaggregated on 16× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 250ms, TPOT ≤ 12ms, ISL=4000, OSL=500
+#
+# 456B MoE (45.9B active) + Lightning Attention for long context.
+# Expert INT8 quantization (--quantization experts_int8). TP=8 per worker.
+# Disagg separates prefill (compute-heavy MoE routing) from decode
+# (memory-bound, benefits from Lightning Attention's sub-quadratic scaling).
+# NOTE: Requires V0 engine (VLLM_USE_V1=0) and --trust-remote-code.
+
+exps:
+  - minimax_m1_disagg
+
+minimax_m1_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "MiniMaxAI/MiniMax-M1-40k"
+  total_gpus: 16
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 4000
+  osl: 500
+  ttft: 250.0
+  tpot: 12.0
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "int8"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [8]
+      pp_list: [1]
+      dp_list: [1]
+    decode_worker_config:
+      gemm_quant_mode: "int8"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [8]
+      pp_list: [1]
+      dp_list: [1]
+    replica_config:
+      num_gpu_per_replica: [16]
+      max_gpu_per_replica: 16
+      max_prefill_worker: 2
+      max_decode_worker: 2
+    advanced_tuning_config:
+      prefill_latency_correction_scale: 1.1
+      decode_latency_correction_scale: 1.08
+      prefill_max_batch_size: 1
+      decode_max_batch_size: 128

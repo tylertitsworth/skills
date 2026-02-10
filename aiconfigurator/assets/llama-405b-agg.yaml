@@ -1,0 +1,31 @@
+# Llama 3.1 405B — Aggregated on 16× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 400ms, TPOT ≤ 12ms, ISL=2000, OSL=500
+#
+# 405B dense in bf16 ≈ 810 GB → FP8 ≈ 405 GB → needs TP=8 minimum (≈51 GB/GPU).
+# At 16 GPUs with TP=8: 2 replicas for throughput. FP8-block GEMM + FP8 KV cache.
+# Aggregated mode simpler to operate; disagg recommended for strict TTFT SLAs.
+
+exps:
+  - llama_405b_agg
+
+llama_405b_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "meta-llama/Llama-3.1-405B-Instruct"
+  total_gpus: 16
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2000
+  osl: 500
+  ttft: 400.0
+  tpot: 12.0
+  config:
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "fp8"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [8]
+      pp_list: [1]
+      dp_list: [1]

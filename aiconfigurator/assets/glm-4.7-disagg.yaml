@@ -1,0 +1,51 @@
+# GLM-4.7 — Disaggregated on 8× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 100ms, TPOT ≤ 6ms, ISL=4000, OSL=500
+#
+# ~9B dense model. FP8 ≈ 9 GB → single GPU per worker with massive KV headroom.
+# Disagg useful for strict TTFT SLAs on long-context (65K+) workloads where
+# prefill compute dominates. TP=1 per worker, maximize replica count.
+# MTP speculative decoding (built-in draft layers) on decode workers.
+
+exps:
+  - glm_4_7_disagg
+
+glm_4_7_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "zai-org/GLM-4.7-FP8"
+  total_gpus: 8
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 4000
+  osl: 500
+  ttft: 100.0
+  tpot: 6.0
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [1, 2]
+      tp_list: [1, 2]
+      pp_list: [1]
+      dp_list: [1]
+    decode_worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [1]
+      tp_list: [1]
+      pp_list: [1]
+      dp_list: [1]
+    replica_config:
+      num_gpu_per_replica: [2, 4, 6, 8]
+      max_gpu_per_replica: 8
+      max_prefill_worker: 4
+      max_decode_worker: 6
+    advanced_tuning_config:
+      prefill_latency_correction_scale: 1.05
+      decode_latency_correction_scale: 1.05
+      prefill_max_batch_size: 4
+      decode_max_batch_size: 256

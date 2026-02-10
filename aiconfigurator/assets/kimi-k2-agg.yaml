@@ -1,0 +1,34 @@
+# Kimi-K2 — Aggregated on 16× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 400ms, TPOT ≤ 15ms, ISL=2000, OSL=500
+#
+# 1T MoE (384 experts + 1 shared, 8 selected → 32B active). MLA attention.
+# FP8 weights + FP8 KV cache. Minimum 16 GPUs: TP=8 + PP=2 across 2 nodes.
+# Aggregated mode: simpler ops, single worker type. For strict SLAs use disagg.
+# DP+EP alternative: --enable-expert-parallel with DeepEP/DeepGEMM.
+
+exps:
+  - kimi_k2_agg
+
+kimi_k2_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "moonshotai/Kimi-K2-Instruct"
+  total_gpus: 16
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2000
+  osl: 500
+  ttft: 400.0
+  tpot: 15.0
+  config:
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "fp8"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [8]
+      pp_list: [1, 2]
+      dp_list: [1]
+      moe_tp_list: [8]
+      moe_ep_list: [1]

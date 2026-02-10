@@ -1,0 +1,38 @@
+# DeepSeek-V3 (671B MOE) — Aggregated on 32× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 600ms, TPOT ≤ 18ms, ISL=2000, OSL=500
+#
+# 671B MOE with 256 experts (8 active + 1 shared → ~37B active).
+# FP8-block: expert params ≈ 335 GB. EP=8 distributes across GPUs.
+# Aggregated mode simpler to operate; disagg recommended for strict SLAs.
+# At 32 GPUs with EP=8: 4 replicas possible for throughput scaling.
+
+exps:
+  - deepseek_v3_agg
+
+deepseek_v3_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "deepseek-ai/DeepSeek-V3"
+  total_gpus: 32
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2000
+  osl: 500
+  prefix: 0
+  ttft: 600.0
+  tpot: 18.0
+  config:
+    nextn: 1
+    nextn_accept_rates: [0.85, 0, 0, 0, 0]
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
+      kvcache_quant_mode: "fp8"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [1]
+      pp_list: [1]
+      dp_list: [1]
+      moe_tp_list: [1]
+      moe_ep_list: [8]

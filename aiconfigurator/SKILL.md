@@ -320,11 +320,10 @@ The webapp provides the same functionality as the CLI with a visual interface. A
 - [Paper: arXiv:2601.06288](https://arxiv.org/abs/2601.06288)
 - `references/experiment-config.md` — full YAML experiment schema, quantization options, parallelism search space
 - `references/advanced-tuning.md` — correction scales, replica config, practical search space reduction
-- `assets/llama-405b-disagg.yaml` — Llama 3.1 405B disaggregated on 32× H100, vLLM
-- `assets/qwen3-32b-agg.yaml` — Qwen3 32B aggregated on 8× H100, vLLM
-- `assets/qwen3-32b-disagg.yaml` — Qwen3 32B disaggregated on 16× H100, vLLM with strict SLAs
-- `assets/qwen3-235b-agg.yaml` — Qwen3-235B-A22B MoE aggregated on 8× H100, FP8, vLLM
-- `assets/glm-4.7-agg.yaml` — GLM-4.7 FP8 aggregated on 8× H100, vLLM
-- `assets/minimax-m1-agg.yaml` — MiniMax-M1 456B MoE aggregated on 8× H100, experts_int8, vLLM
-- `assets/kimi-k2-disagg.yaml` — Kimi-K2 1T MoE disaggregated on 32× H100, FP8, vLLM
-- `assets/deepseek-v3-disagg.yaml` — DeepSeek-V3 671B MoE disaggregated on 64× H100, vLLM
+- `assets/qwen3-32b-agg.yaml` / `assets/qwen3-32b-disagg.yaml` — Qwen3 32B (8–16× H100)
+- `assets/qwen3-235b-agg.yaml` / `assets/qwen3-235b-disagg.yaml` — Qwen3-235B-A22B MoE FP8 (8–16× H100)
+- `assets/glm-4.7-agg.yaml` / `assets/glm-4.7-disagg.yaml` — GLM-4.7 FP8 (8× H100)
+- `assets/minimax-m1-agg.yaml` / `assets/minimax-m1-disagg.yaml` — MiniMax-M1 456B MoE experts_int8 (8–16× H100)
+- `assets/kimi-k2-agg.yaml` / `assets/kimi-k2-disagg.yaml` — Kimi-K2 1T MoE FP8 (16–32× H100)
+- `assets/llama-405b-agg.yaml` / `assets/llama-405b-disagg.yaml` — Llama 3.1 405B FP8 (16–32× H100)
+- `assets/deepseek-v3-agg.yaml` / `assets/deepseek-v3-disagg.yaml` — DeepSeek-V3 671B MoE FP8 (32–64× H100)
