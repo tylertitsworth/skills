@@ -1,0 +1,80 @@
+# RayService deploying vLLM behind Ray Serve with autoscaling.
+# Provides zero-downtime upgrades via RayService's rolling update mechanism.
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: llm-service
+  namespace: ml-serving
+spec:
+  serviceUnhealthySecondThreshold: 300
+  deploymentUnhealthySecondThreshold: 300
+  serveConfigV2: |
+    applications:
+      - name: llm
+        route_prefix: /
+        import_path: serve_vllm:deployment
+        deployments:
+          - name: VLLMDeployment
+            num_replicas: 2
+            max_ongoing_requests: 128
+            ray_actor_options:
+              num_cpus: 4
+              num_gpus: 1
+            autoscaling_config:
+              min_replicas: 1
+              max_replicas: 8
+              target_ongoing_requests: 24
+              upscale_delay_s: 30
+              downscale_delay_s: 300
+              metrics_interval_s: 10
+  rayClusterConfig:
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              image: rayproject/ray-ml:2.53.0-py311-gpu
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: 8Gi
+                limits:
+                  cpu: "4"
+                  memory: 8Gi
+    workerGroupSpecs:
+      - groupName: gpu-workers
+        replicas: 2
+        minReplicas: 1
+        maxReplicas: 8
+        rayStartParams: {}
+        template:
+          spec:
+            containers:
+              - name: ray-worker
+                image: rayproject/ray-ml:2.53.0-py311-gpu
+                resources:
+                  requests:
+                    cpu: "4"
+                    memory: 32Gi
+                    nvidia.com/gpu: "1"
+                  limits:
+                    nvidia.com/gpu: "1"
+                volumeMounts:
+                  - name: dshm
+                    mountPath: /dev/shm
+                  - name: model-cache
+                    mountPath: /root/.cache/huggingface
+            volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: 8Gi
+              - name: model-cache
+                persistentVolumeClaim:
+                  claimName: hf-model-cache
+            tolerations:
+              - key: nvidia.com/gpu
+                operator: Exists
+                effect: NoSchedule

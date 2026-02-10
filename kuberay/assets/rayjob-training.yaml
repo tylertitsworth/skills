@@ -1,0 +1,73 @@
+# RayJob for distributed GPU training with Ray Train.
+# Submits a training script to a Ray cluster that auto-creates and tears down.
+apiVersion: ray.io/v1
+kind: RayJob
+metadata:
+  name: train-llm
+  namespace: ml-team
+  labels:
+    kueue.x-k8s.io/queue-name: training-queue  # optional: Kueue integration
+spec:
+  submissionMode: K8sJobMode
+  entrypoint: python /home/ray/train.py
+  shutdownAfterJobFinishes: true
+  ttlSecondsAfterFinished: 300
+  activeDeadlineSeconds: 86400  # 24h timeout
+  # Runtime env for pip dependencies
+  runtimeEnvYAML: |
+    pip:
+      - torch==2.5.1
+      - transformers>=4.45.0
+  rayClusterSpec:
+    headGroupSpec:
+      rayStartParams:
+        dashboard-host: "0.0.0.0"
+      template:
+        spec:
+          containers:
+            - name: ray-head
+              image: rayproject/ray-ml:2.53.0-py311-gpu
+              resources:
+                requests:
+                  cpu: "4"
+                  memory: 16Gi
+                limits:
+                  cpu: "4"
+                  memory: 16Gi
+              volumeMounts:
+                - name: code
+                  mountPath: /home/ray
+          volumes:
+            - name: code
+              configMap:
+                name: training-code
+    workerGroupSpecs:
+      - groupName: gpu-workers
+        replicas: 4
+        minReplicas: 4
+        maxReplicas: 4
+        rayStartParams: {}
+        template:
+          spec:
+            containers:
+              - name: ray-worker
+                image: rayproject/ray-ml:2.53.0-py311-gpu
+                resources:
+                  requests:
+                    cpu: "8"
+                    memory: 64Gi
+                    nvidia.com/gpu: "1"
+                  limits:
+                    nvidia.com/gpu: "1"
+                volumeMounts:
+                  - name: dshm
+                    mountPath: /dev/shm
+            volumes:
+              - name: dshm
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: 16Gi
+            tolerations:
+              - key: nvidia.com/gpu
+                operator: Exists
+                effect: NoSchedule
