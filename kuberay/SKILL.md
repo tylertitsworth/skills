@@ -554,6 +554,71 @@ kubectl exec -it $HEAD_POD -- cat /tmp/ray/session_latest/logs/gcs_server.out
 
 For Ray Serve deployments with zero-downtime upgrades, see `references/rayservice.md`.
 
+### Disaggregated Prefill-Decode via RayService
+
+Embed `build_pd_openai_app` in a RayService for K8s-native PD serving:
+
+```yaml
+apiVersion: ray.io/v1
+kind: RayService
+metadata:
+  name: vllm-pd-serving
+spec:
+  serveConfigV2: |
+    applications:
+      - name: llm_pd_app
+        route_prefix: /
+        import_path: ray.serve.llm:build_pd_openai_app
+        args:
+          prefill_config:
+            model_loading_config:
+              model_id: llama-8b
+              model_source: meta-llama/Llama-3.1-8B-Instruct
+            accelerator_type: A100
+            deployment_config:
+              autoscaling_config:
+                min_replicas: 1
+                max_replicas: 2
+            engine_kwargs:
+              tensor_parallel_size: 2
+              kv_transfer_config:
+                kv_connector: NixlConnector
+                kv_role: kv_both
+          decode_config:
+            model_loading_config:
+              model_id: llama-8b
+              model_source: meta-llama/Llama-3.1-8B-Instruct
+            accelerator_type: A100
+            deployment_config:
+              autoscaling_config:
+                min_replicas: 2
+                max_replicas: 8
+            engine_kwargs:
+              gpu_memory_utilization: 0.95
+              kv_transfer_config:
+                kv_connector: NixlConnector
+                kv_role: kv_both
+  rayClusterConfig:
+    headGroupSpec:
+      # ... (standard head config)
+    workerGroupSpecs:
+      - groupName: gpu-workers
+        replicas: 4
+        template:
+          spec:
+            containers:
+            - name: ray-worker
+              resources:
+                limits:
+                  nvidia.com/gpu: "2"
+```
+
+Key points:
+- Worker group must have enough GPUs for both prefill and decode replicas
+- Ray Serve handles routing — no external proxy needed
+- NixlConnector transfers KV cache between prefill and decode actors on the Ray cluster
+- Autoscaler adjusts prefill/decode replica counts independently based on load
+
 ## Troubleshooting
 
 For debugging common KubeRay issues, see `references/troubleshooting.md`.

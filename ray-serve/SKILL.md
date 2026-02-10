@@ -8,7 +8,8 @@ description: >
   (4) Setting up request batching (@serve.batch parameters), (5) Composing multi-model
   pipelines with DeploymentHandle, (6) Deploying on Kubernetes with RayService CRD,
   (7) Configuring health checks, graceful shutdown, and logging,
-  (8) Tuning performance (streaming, gRPC, multiplexed models).
+  (8) Tuning performance (streaming, gRPC, multiplexed models),
+  (9) Disaggregated prefill-decode serving with build_pd_openai_app.
 ---
 
 # Ray Serve
@@ -329,6 +330,90 @@ class MultiLoRAModel:
         return self.base_model.generate(request, adapter)
 ```
 
+## Disaggregated Prefill-Decode Serving
+
+Ray Serve provides native PD disaggregation via `build_pd_openai_app`, which manages separate prefill and decode vLLM instances with automatic KV cache transfer routing.
+
+### Python API
+
+```python
+from ray import serve
+from ray.serve.llm import LLMConfig, build_pd_openai_app
+
+prefill_config = LLMConfig(
+    model_loading_config={"model_id": "llama-8b", "model_source": "meta-llama/Llama-3.1-8B-Instruct"},
+    accelerator_type="A100",
+    deployment_config={"autoscaling_config": {"min_replicas": 1, "max_replicas": 2}},
+    engine_kwargs={
+        "tensor_parallel_size": 2,
+        "kv_transfer_config": {"kv_connector": "NixlConnector", "kv_role": "kv_both"},
+    },
+)
+
+decode_config = LLMConfig(
+    model_loading_config={"model_id": "llama-8b", "model_source": "meta-llama/Llama-3.1-8B-Instruct"},
+    accelerator_type="A100",
+    deployment_config={"autoscaling_config": {"min_replicas": 2, "max_replicas": 8}},
+    engine_kwargs={
+        "gpu_memory_utilization": 0.95,
+        "kv_transfer_config": {"kv_connector": "NixlConnector", "kv_role": "kv_both"},
+    },
+)
+
+app = build_pd_openai_app({"prefill_config": prefill_config, "decode_config": decode_config})
+serve.run(app)
+```
+
+### YAML Config (for `serve deploy` or RayService CRD)
+
+```yaml
+applications:
+  - name: llm_pd_app
+    route_prefix: /
+    import_path: ray.serve.llm:build_pd_openai_app
+    args:
+      prefill_config:
+        model_loading_config:
+          model_id: llama-8b
+          model_source: meta-llama/Llama-3.1-8B-Instruct
+        accelerator_type: A100
+        deployment_config:
+          autoscaling_config:
+            min_replicas: 1
+            max_replicas: 2
+        engine_kwargs:
+          tensor_parallel_size: 2
+          kv_transfer_config:
+            kv_connector: NixlConnector
+            kv_role: kv_both
+      decode_config:
+        model_loading_config:
+          model_id: llama-8b
+          model_source: meta-llama/Llama-3.1-8B-Instruct
+        accelerator_type: A100
+        deployment_config:
+          autoscaling_config:
+            min_replicas: 2
+            max_replicas: 8
+        engine_kwargs:
+          gpu_memory_utilization: 0.95
+          kv_transfer_config:
+            kv_connector: NixlConnector
+            kv_role: kv_both
+        runtime_env:
+          env_vars:
+            VLLM_NIXL_SIDE_CHANNEL_PORT: "5601"
+```
+
+Key differences from `build_openai_app`:
+- Uses `build_pd_openai_app` instead of `build_openai_app`
+- Takes `prefill_config` and `decode_config` instead of `llm_configs` list
+- Both configs must specify the **same model** — Ray handles routing between prefill and decode
+- Autoscaling is independent: scale decode replicas higher for generation-heavy workloads
+- NixlConnector handles KV cache transfer automatically between instances
+
+See `assets/serve_pd_config.yaml` for a complete deployment template.
+
 ## Kubernetes Deployment (RayService)
 
 The ServeConfigV2 is embedded in the RayService CRD:
@@ -430,3 +515,4 @@ See `references/performance.md` for performance tuning and troubleshooting.
 - [RayService on K8s](https://docs.ray.io/en/latest/cluster/kubernetes/user-guides/rayservice.html)
 - `references/performance.md` — performance tuning and troubleshooting
 - `assets/serve_config.yaml` — ServeConfigV2 example with multi-model deployment and autoscaling
+- `assets/serve_pd_config.yaml` — Disaggregated prefill-decode config with NixlConnector and independent scaling

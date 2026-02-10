@@ -1,0 +1,63 @@
+# Ray Serve LLM — Disaggregated Prefill-Decode deployment config.
+# Deploy with: serve deploy serve_pd_config.yaml
+# Or embed in a RayService CRD's serveConfigV2 field.
+#
+# Uses ray.serve.llm build_pd_openai_app for automatic PD routing.
+# Prefill and decode instances scale independently.
+# Docs: https://docs.ray.io/en/latest/serve/llm/user-guides/prefill-decode.html
+
+applications:
+  - name: llm_pd_app
+    route_prefix: /
+    import_path: ray.serve.llm:build_pd_openai_app
+    args:
+      prefill_config:
+        model_loading_config:
+          model_id: llama-70b
+          model_source: meta-llama/Llama-3.1-70B-Instruct
+        accelerator_type: A100
+        deployment_config:
+          autoscaling_config:
+            min_replicas: 1
+            max_replicas: 4
+            target_ongoing_requests: 8
+            upscale_delay_s: 15
+            downscale_delay_s: 300
+        engine_kwargs:
+          tensor_parallel_size: 4
+          enable_chunked_prefill: true
+          enable_prefix_caching: true
+          gpu_memory_utilization: 0.90
+          kv_transfer_config:
+            kv_connector: NixlConnector
+            kv_role: kv_both
+        runtime_env:
+          env_vars:
+            VLLM_USE_V1: "1"
+            VLLM_NIXL_SIDE_CHANNEL_PORT: "5600"
+            UCX_NET_DEVICES: "all"
+
+      decode_config:
+        model_loading_config:
+          model_id: llama-70b
+          model_source: meta-llama/Llama-3.1-70B-Instruct
+        accelerator_type: A100
+        deployment_config:
+          autoscaling_config:
+            min_replicas: 2
+            max_replicas: 8
+            target_ongoing_requests: 16
+            upscale_delay_s: 30
+            downscale_delay_s: 300
+        engine_kwargs:
+          tensor_parallel_size: 2
+          gpu_memory_utilization: 0.95
+          enable_prefix_caching: true
+          kv_transfer_config:
+            kv_connector: NixlConnector
+            kv_role: kv_both
+        runtime_env:
+          env_vars:
+            VLLM_USE_V1: "1"
+            VLLM_NIXL_SIDE_CHANNEL_PORT: "5601"
+            UCX_NET_DEVICES: "all"
