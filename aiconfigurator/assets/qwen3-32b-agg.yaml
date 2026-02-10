@@ -1,0 +1,29 @@
+# Qwen3 32B — Aggregated on 8× H200 SXM
+# Target: TTFT ≤ 200ms, TPOT ≤ 10ms, ISL=2000, OSL=500
+# Small-medium dense model. Aggregated is often optimal at this scale.
+# Compares TP=2 (4 replicas) vs TP=4 (2 replicas) vs TP=1 (8 replicas).
+
+exps:
+  - qwen3_32b_agg
+
+qwen3_32b_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 8
+  system_name: "h200_sxm"
+  backend_name: "trtllm"
+  isl: 2000
+  osl: 500
+  ttft: 200.0
+  tpot: 10.0
+  config:
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [1, 2, 4, 8]
+      tp_list: [1, 2, 4, 8]
+      pp_list: [1]
+      dp_list: [1]

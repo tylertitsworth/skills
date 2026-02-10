@@ -1,0 +1,48 @@
+# Llama 3.1 405B — Disaggregated on 32× H100 SXM
+# Target: TTFT ≤ 300ms, TPOT ≤ 10ms, ISL=4000, OSL=500
+# Dense model — no MOE/EP settings needed.
+# FP8-block GEMM with FP16 KV cache for quality.
+
+exps:
+  - llama_405b_disagg
+
+llama_405b_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "meta-llama/Llama-3.1-405B-Instruct"
+  total_gpus: 32
+  system_name: "h100_sxm"
+  backend_name: "trtllm"
+  isl: 4000
+  osl: 500
+  ttft: 300.0
+  tpot: 10.0
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [8]
+      pp_list: [1]
+      dp_list: [1]
+    decode_worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [4, 8]
+      tp_list: [4, 8]
+      pp_list: [1]
+      dp_list: [1]
+    replica_config:
+      num_gpu_per_replica: [16, 24, 32]
+      max_gpu_per_replica: 32
+      max_prefill_worker: 4
+      max_decode_worker: 8
+    advanced_tuning_config:
+      prefill_latency_correction_scale: 1.1
+      decode_latency_correction_scale: 1.08
+      prefill_max_batch_size: 1
+      decode_max_batch_size: 128
