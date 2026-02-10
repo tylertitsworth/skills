@@ -1,11 +1,17 @@
-# MiniMax-M1 — Disaggregated on 16× H100 SXM (80 GB), vLLM backend
-# Target: TTFT ≤ 250ms, TPOT ≤ 12ms, ISL=4000, OSL=500
+# MiniMax-M1 — Disaggregated, vLLM backend
 #
-# 456B MoE (45.9B active) + Lightning Attention for long context.
-# Expert INT8 quantization (--quantization experts_int8). TP=8 per worker.
-# Disagg separates prefill (compute-heavy MoE routing) from decode
-# (memory-bound, benefits from Lightning Attention's sub-quadratic scaling).
-# NOTE: Requires V0 engine (VLLM_USE_V1=0) and --trust-remote-code.
+# Architecture: MiniMaxM1ForCausalLM (MoE + Lightning Attention hybrid)
+# Layers: 80 | Hidden: 6144 | Heads: 64Q/8KV | Head dim: 128
+# Experts: 32 routed (2 active) | MoE intermediate: 9216
+# Attention: hybrid (attn_type_list alternates softmax/linear every 8 layers)
+# Vocab: 200064 | Context: 10240000 (10M theoretical, 40K/80K practical variants)
+# Total params: 456B | Active: ~45.9B | BF16: ~912 GB | FP8: ~456 GB
+# FP8 with TP=8: ~57 GB/GPU
+#
+# vLLM requires: VLLM_USE_V1=0, --trust-remote-code, --quantization experts_int8
+#
+# NOTE: MiniMaxM1ForCausalLM is a custom architecture — likely not in
+# AIConfigurator's supported model list. Use `aiconfigurator cli support` to verify.
 
 exps:
   - minimax_m1_disagg
@@ -17,13 +23,12 @@ minimax_m1_disagg:
   total_gpus: 16
   system_name: "h100_sxm"
   backend_name: "vllm"
-  isl: 4000
-  osl: 500
-  ttft: 250.0
-  tpot: 12.0
+  isl: 2048
+  osl: 512
   config:
     prefill_worker_config:
-      gemm_quant_mode: "int8"
+      gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
       kvcache_quant_mode: "float16"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"
@@ -31,8 +36,11 @@ minimax_m1_disagg:
       tp_list: [8]
       pp_list: [1]
       dp_list: [1]
+      moe_tp_list: [8]
+      moe_ep_list: [1]
     decode_worker_config:
-      gemm_quant_mode: "int8"
+      gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
       kvcache_quant_mode: "float16"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"
@@ -40,13 +48,10 @@ minimax_m1_disagg:
       tp_list: [8]
       pp_list: [1]
       dp_list: [1]
+      moe_tp_list: [8]
+      moe_ep_list: [1]
     replica_config:
       num_gpu_per_replica: [16]
       max_gpu_per_replica: 16
       max_prefill_worker: 2
       max_decode_worker: 2
-    advanced_tuning_config:
-      prefill_latency_correction_scale: 1.1
-      decode_latency_correction_scale: 1.08
-      prefill_max_batch_size: 1
-      decode_max_batch_size: 128

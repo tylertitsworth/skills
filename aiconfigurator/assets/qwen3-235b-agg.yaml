@@ -1,10 +1,11 @@
-# Qwen3-235B-A22B — Aggregated on 8× H100 SXM (80 GB), vLLM backend
-# Target: TTFT ≤ 250ms, TPOT ≤ 12ms, ISL=2000, OSL=500
+# Qwen3-235B-A22B — Aggregated, vLLM backend
 #
-# 235B MoE (128 experts, 8 active → 22B active params).
-# FP8 weights ≈ 235 GB total but expert weights are sparse — only active
-# expert slices loaded per token. With FP8-block GEMM, fits TP=4 on 4× H100.
-# Search TP=[4,8] — TP=4 allows 2 replicas on 8 GPUs for higher throughput.
+# Architecture: Qwen3MoeForCausalLM (MoE)
+# Layers: 94 | Hidden: 4096 | Heads: 64Q/4KV | Head dim: 128
+# Experts: 128 routed (8 active) | MoE intermediate: 1536
+# Dense intermediate: 12288 | Vocab: 151936 | Context: 262144
+# Total params: ~235B | Active: ~22B
+# FP8: ~235 GB total weights → TP=4 ≈ 59 GB/GPU (fits H100 80 GB, tight KV headroom)
 
 exps:
   - qwen3_235b_agg
@@ -16,13 +17,12 @@ qwen3_235b_agg:
   total_gpus: 8
   system_name: "h100_sxm"
   backend_name: "vllm"
-  isl: 2000
-  osl: 500
-  ttft: 250.0
-  tpot: 12.0
+  isl: 2048
+  osl: 512
   config:
     worker_config:
       gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
       kvcache_quant_mode: "fp8"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"

@@ -1,10 +1,15 @@
-# Kimi-K2 — Aggregated on 16× H100 SXM (80 GB), vLLM backend
-# Target: TTFT ≤ 400ms, TPOT ≤ 15ms, ISL=2000, OSL=500
+# Kimi-K2 — Aggregated, vLLM backend
 #
-# 1T MoE (384 experts + 1 shared, 8 selected → 32B active). MLA attention.
-# FP8 weights + FP8 KV cache. Minimum 16 GPUs: TP=8 + PP=2 across 2 nodes.
-# Aggregated mode: simpler ops, single worker type. For strict SLAs use disagg.
-# DP+EP alternative: --enable-expert-parallel with DeepEP/DeepGEMM.
+# Architecture: DeepseekV3ForCausalLM (MoE + MLA)
+# Layers: 61 (1 dense + 60 MoE) | Hidden: 7168 | Heads: 64Q/64KV | Head dim: v=128
+# MLA: q_lora_rank=1536, kv_lora_rank=512, qk_nope=128, qk_rope=64
+# Experts: 384 routed (8 active) + 1 shared | MoE intermediate: 2048
+# Dense intermediate: 18432 | Vocab: 163840 | Context: 131072
+# Total params: ~1T | Active: ~32B | FP8 (native): ~500 GB (block FP8 in config)
+# FP8 with TP=8 + PP=2 (16 GPUs): ~31 GB/GPU (fits H100 80 GB)
+#
+# Uses DeepseekV3ForCausalLM arch class — AIConfigurator likely supports this
+# since it supports DeepSeek-V3/R1 natively.
 
 exps:
   - kimi_k2_agg
@@ -16,13 +21,12 @@ kimi_k2_agg:
   total_gpus: 16
   system_name: "h100_sxm"
   backend_name: "vllm"
-  isl: 2000
-  osl: 500
-  ttft: 400.0
-  tpot: 15.0
+  isl: 2048
+  osl: 512
   config:
     worker_config:
       gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
       kvcache_quant_mode: "fp8"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"

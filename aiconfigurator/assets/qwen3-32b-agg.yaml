@@ -1,10 +1,10 @@
-# Qwen3 32B — Aggregated on 8× H100 SXM (80 GB), vLLM backend
-# Target: TTFT ≤ 200ms, TPOT ≤ 10ms, ISL=2000, OSL=500
+# Qwen3 32B — Aggregated, vLLM backend
 #
-# 32B in bf16 ≈ 64 GB → fits on single H100 at FP8 (~32 GB), leaving ~46 GB for KV cache.
-# At this model size, aggregated serving often matches or beats disagg.
-# Search TP=[1,2,4] to find the sweet spot between replicas and per-replica performance.
-# TP=1 → 8 replicas (max throughput), TP=2 → 4 replicas (lower TTFT), TP=4 → 2 replicas.
+# Architecture: Qwen3ForCausalLM (dense)
+# Layers: 64 | Hidden: 5120 | Heads: 64Q/8KV | Head dim: 128
+# Vocab: 151936 | Context: 40960
+# Total params: ~32B | BF16: ~64 GB | FP8: ~32 GB
+# FP8 fits on single H100 80 GB (~32 GB model + ~46 GB KV headroom).
 
 exps:
   - qwen3_32b_agg
@@ -16,17 +16,15 @@ qwen3_32b_agg:
   total_gpus: 8
   system_name: "h100_sxm"
   backend_name: "vllm"
-  isl: 2000
-  osl: 500
-  ttft: 200.0
-  tpot: 10.0
+  isl: 2048
+  osl: 512
   config:
     worker_config:
       gemm_quant_mode: "fp8_block"
       kvcache_quant_mode: "float16"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"
-      num_gpu_per_worker: [1, 2, 4]     # TP=1 fits at FP8 on H100 80 GB
+      num_gpu_per_worker: [1, 2, 4]
       tp_list: [1, 2, 4]
       pp_list: [1]
       dp_list: [1]

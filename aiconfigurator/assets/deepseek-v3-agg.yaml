@@ -1,10 +1,13 @@
-# DeepSeek-V3 (671B MOE) — Aggregated on 32× H100 SXM (80 GB), vLLM backend
-# Target: TTFT ≤ 600ms, TPOT ≤ 18ms, ISL=2000, OSL=500
+# DeepSeek-V3 (671B MoE) — Aggregated, vLLM backend
 #
-# 671B MOE with 256 experts (8 active + 1 shared → ~37B active).
-# FP8-block: expert params ≈ 335 GB. EP=8 distributes across GPUs.
-# Aggregated mode simpler to operate; disagg recommended for strict SLAs.
-# At 32 GPUs with EP=8: 4 replicas possible for throughput scaling.
+# Architecture: DeepseekV3ForCausalLM (MoE + MLA)
+# Layers: 61 (3 dense + 58 MoE) | Hidden: 7168 | Heads: 128Q/128KV
+# MLA: q_lora_rank=1536, kv_lora_rank=512, qk_nope=128, qk_rope=64
+# Experts: 256 routed (8 active, n_group=8) + 1 shared | MoE intermediate: 2048
+# Dense intermediate: 18432 | Vocab: 129280 | Context: 163840
+# MTP: 1 next-token prediction layer (num_nextn_predict_layers: 1)
+# Total params: 671B | Active: ~37B | FP8 (native): ~335 GB
+# FP8 with EP=8: ~42 GB experts/GPU + ~10 GB shared ≈ 52 GB/GPU
 
 exps:
   - deepseek_v3_agg
@@ -16,11 +19,9 @@ deepseek_v3_agg:
   total_gpus: 32
   system_name: "h100_sxm"
   backend_name: "vllm"
-  isl: 2000
-  osl: 500
+  isl: 2048
+  osl: 512
   prefix: 0
-  ttft: 600.0
-  tpot: 18.0
   config:
     nextn: 1
     nextn_accept_rates: [0.85, 0, 0, 0, 0]

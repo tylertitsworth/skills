@@ -1,10 +1,15 @@
-# GLM-4.7 — Aggregated on 8× H100 SXM (80 GB), vLLM backend
-# Target: TTFT ≤ 150ms, TPOT ≤ 8ms, ISL=2000, OSL=500
+# GLM-4.7 — Aggregated, vLLM backend
 #
-# ~9B dense model. FP8 ≈ 9 GB → fits on single H100 with massive KV cache headroom.
-# TP=1 maximizes replicas (8 replicas on 8 GPUs).
-# TP=2 lowers TTFT for long-context workloads (65K+ context).
-# MTP speculative decoding (built-in draft layers) further reduces decode latency.
+# Architecture: Glm4MoeForCausalLM (MoE)
+# Layers: 92 | Hidden: 5120 | Heads: 96Q/8KV | Head dim: 128
+# Experts: 160 routed (8 active) + 1 shared | MoE intermediate: 1536
+# Dense intermediate: 12288 | First 3 layers dense | Vocab: 151552 | Context: 202752
+# MTP: 1 next-token prediction layer (num_nextn_predict_layers: 1)
+# Total params: estimated ~200-250B (MoE) | FP8: ~100-125 GB
+# FP8 with TP=4: ~25-31 GB/GPU. TP=2 may fit if total is on lower end.
+#
+# NOTE: Glm4MoeForCausalLM may not be in AIConfigurator's supported model list.
+# Use `aiconfigurator cli support` to verify before running.
 
 exps:
   - glm_4_7_agg
@@ -16,17 +21,20 @@ glm_4_7_agg:
   total_gpus: 8
   system_name: "h100_sxm"
   backend_name: "vllm"
-  isl: 2000
-  osl: 500
-  ttft: 150.0
-  tpot: 8.0
+  isl: 2048
+  osl: 512
   config:
+    nextn: 1
+    nextn_accept_rates: [0.90, 0, 0, 0, 0]
     worker_config:
       gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
       kvcache_quant_mode: "float16"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"
-      num_gpu_per_worker: [1, 2, 4]
-      tp_list: [1, 2, 4]
+      num_gpu_per_worker: [2, 4, 8]
+      tp_list: [2, 4, 8]
       pp_list: [1]
       dp_list: [1]
+      moe_tp_list: [2, 4, 8]
+      moe_ep_list: [1]

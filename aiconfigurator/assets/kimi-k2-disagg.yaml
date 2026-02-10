@@ -1,11 +1,14 @@
-# Kimi-K2 — Disaggregated on 32× H100 SXM (80 GB), vLLM backend
-# Target: TTFT ≤ 350ms, TPOT ≤ 12ms, ISL=4000, OSL=500
+# Kimi-K2 — Disaggregated, vLLM backend
 #
-# 1T MoE (384 experts + 1 shared, 8 selected → 32B active). MLA attention.
-# FP8 weights + FP8 KV cache. Minimum 16 GPUs (TP=8+PP=2).
-# Disaggregated mode benefits from separating prefill (compute-heavy MoE routing)
-# from decode (memory-bound KV cache access).
-# DP+EP mode alternative: --enable-expert-parallel with DeepEP/DeepGEMM.
+# Architecture: DeepseekV3ForCausalLM (MoE + MLA)
+# Layers: 61 (1 dense + 60 MoE) | Hidden: 7168 | Heads: 64Q/64KV | Head dim: v=128
+# MLA: q_lora_rank=1536, kv_lora_rank=512, qk_nope=128, qk_rope=64
+# Experts: 384 routed (8 active) + 1 shared | MoE intermediate: 2048
+# Dense intermediate: 18432 | Vocab: 163840 | Context: 131072
+# Total params: ~1T | Active: ~32B | FP8 (native): ~500 GB
+#
+# Uses DeepseekV3ForCausalLM arch class — AIConfigurator likely supports this
+# since it supports DeepSeek-V3/R1 natively.
 
 exps:
   - kimi_k2_disagg
@@ -17,13 +20,12 @@ kimi_k2_disagg:
   total_gpus: 32
   system_name: "h100_sxm"
   backend_name: "vllm"
-  isl: 4000
-  osl: 500
-  ttft: 350.0
-  tpot: 12.0
+  isl: 2048
+  osl: 512
   config:
     prefill_worker_config:
       gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
       kvcache_quant_mode: "fp8"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"
@@ -35,22 +37,18 @@ kimi_k2_disagg:
       moe_ep_list: [1]
     decode_worker_config:
       gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
       kvcache_quant_mode: "fp8"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"
-      num_gpu_per_worker: [4, 8]
-      tp_list: [4, 8]
+      num_gpu_per_worker: [8]
+      tp_list: [8]
       pp_list: [1]
       dp_list: [1]
-      moe_tp_list: [4, 8]
+      moe_tp_list: [8]
       moe_ep_list: [1]
     replica_config:
       num_gpu_per_replica: [16, 24, 32]
       max_gpu_per_replica: 32
       max_prefill_worker: 4
       max_decode_worker: 8
-    advanced_tuning_config:
-      prefill_latency_correction_scale: 1.12
-      decode_latency_correction_scale: 1.1
-      prefill_max_batch_size: 1
-      decode_max_batch_size: 128
