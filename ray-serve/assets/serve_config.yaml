@@ -1,0 +1,49 @@
+# Ray Serve ServeConfigV2 for multi-model deployment.
+# Apply with: serve deploy serve_config.yaml
+# Or embed in a RayService CRD's serveConfigV2 field.
+#
+# This config deploys two models behind different route prefixes
+# with independent autoscaling.
+
+applications:
+  - name: chat
+    route_prefix: /chat
+    import_path: serve_app:chat_deployment
+    deployments:
+      - name: ChatModel
+        num_replicas: 2
+        max_ongoing_requests: 64
+        ray_actor_options:
+          num_cpus: 4
+          num_gpus: 1
+        autoscaling_config:
+          min_replicas: 1
+          max_replicas: 8
+          target_ongoing_requests: 16
+          upscale_delay_s: 30
+          downscale_delay_s: 300
+          upscaling_factor: 1.0       # add 100% replicas when scaling up
+          downscaling_factor: 0.5     # remove 50% replicas when scaling down
+          metrics_interval_s: 10
+          look_back_period_s: 30
+          smoothing_factor: 0.5
+        # Gradual rollout of new versions
+        user_config:
+          model_id: meta-llama/Llama-3.1-8B-Instruct
+          max_tokens: 2048
+
+  - name: embeddings
+    route_prefix: /embed
+    import_path: serve_app:embed_deployment
+    deployments:
+      - name: EmbedModel
+        num_replicas: 1
+        max_ongoing_requests: 256
+        max_queued_requests: 512
+        ray_actor_options:
+          num_cpus: 2
+          num_gpus: 1
+        autoscaling_config:
+          min_replicas: 1
+          max_replicas: 4
+          target_ongoing_requests: 64
