@@ -1,0 +1,83 @@
+# ClusterQueue with GPU resource groups and borrowing limits.
+# Adjust resourceGroups, quotas, and cohort to match your cluster.
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: gpu-cluster-queue
+spec:
+  # Cohort enables borrowing/lending between queues
+  cohort: ml-workloads
+  # Preemption policy
+  preemption:
+    reclaimWithinCohort: Any
+    borrowWithinCohort:
+      policy: LowerPriority
+      maxPriorityThreshold: 100
+    withinClusterQueue: LowerPriority
+  # Fair sharing weight (higher = more share in cohort)
+  fairSharing:
+    weight: 1
+  resourceGroups:
+    - coveredResources: ["cpu", "memory", "nvidia.com/gpu"]
+      flavors:
+        - name: a100-80gb
+          resources:
+            - name: "nvidia.com/gpu"
+              nominalQuota: 8
+              borrowingLimit: 4       # can borrow up to 4 more from cohort
+              lendingLimit: 2         # will lend up to 2 to cohort
+            - name: "cpu"
+              nominalQuota: 64
+            - name: "memory"
+              nominalQuota: 512Gi
+        - name: t4-spot
+          resources:
+            - name: "nvidia.com/gpu"
+              nominalQuota: 16
+            - name: "cpu"
+              nominalQuota: 64
+            - name: "memory"
+              nominalQuota: 256Gi
+---
+# ResourceFlavor mapping GPU node pools
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: a100-80gb
+spec:
+  nodeLabels:
+    gpu.nvidia.com/class: A100_SXM4_80GB
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+---
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ResourceFlavor
+metadata:
+  name: t4-spot
+spec:
+  nodeLabels:
+    gpu.nvidia.com/class: T4
+    node.kubernetes.io/instance-type: g4dn.xlarge
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+---
+# LocalQueue in user namespace
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: LocalQueue
+metadata:
+  name: training-queue
+  namespace: ml-team
+spec:
+  clusterQueue: gpu-cluster-queue
+---
+# WorkloadPriorityClass for urgent jobs
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: WorkloadPriorityClass
+metadata:
+  name: high-priority
+value: 1000
+description: "High priority training jobs"

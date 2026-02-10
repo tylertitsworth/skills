@@ -1,0 +1,62 @@
+# Flyte Helm values for GPU-enabled ML deployment.
+# Use with: helm install flyte-binary flyteorg/flyte-binary -f values-gpu.yaml
+# Adjust storage, database, and resource settings for your cluster.
+
+configuration:
+  database:
+    postgres:
+      host: postgres.flyte.svc.cluster.local
+      port: 5432
+      dbname: flyte
+      username: flyte
+      passwordPath: /etc/flyte/db-pass/password
+  storage:
+    type: s3
+    connection:
+      endpoint: s3.amazonaws.com
+      region: us-west-2
+    container: my-flyte-bucket
+    enable-multicontainer: true
+  # Task resource defaults and limits
+  task_resources:
+    defaults:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "16"
+      memory: 64Gi
+      gpu: "8"
+  # K8s plugin defaults
+  k8s:
+    default-env-vars:
+      - name: NVIDIA_VISIBLE_DEVICES
+        value: all
+    gpu-resource-name: nvidia.com/gpu
+    # Default pod tolerations for GPU tasks
+    default-tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+
+# Cluster resource templates — auto-created per project/domain
+cluster_resources:
+  templateData:
+    defaultIamRole:
+      value: arn:aws:iam::123456789:role/flyte-task-role
+    projectQuotaCpu:
+      value: "64"
+    projectQuotaMemory:
+      value: 256Gi
+    projectQuotaGpu:
+      value: "16"
+
+# FlytePropeller tuning
+flytepropeller:
+  resources:
+    requests:
+      cpu: "2"
+      memory: 2Gi
+  # Increase for large clusters
+  max-parallelism: 25
+  workers: 8
+  workflow-reeval-duration: 10s

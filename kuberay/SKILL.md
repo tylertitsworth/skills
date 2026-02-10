@@ -573,4 +573,5 @@ For debugging common KubeRay issues, see `references/troubleshooting.md`.
 - [RayJob docs](https://docs.ray.io/en/latest/cluster/kubernetes/getting-started/rayjob-quick-start.html)
 - `references/rayjob.md` — RayJob submitter deep dive
 - `references/troubleshooting.md` — common KubeRay issues
-
+- `assets/rayjob-training.yaml` — RayJob manifest for distributed GPU training with Kueue integration
+- `assets/rayservice-vllm.yaml` — RayService manifest deploying vLLM with autoscaling
