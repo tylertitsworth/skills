@@ -6,7 +6,8 @@ description: >
   (2) Using the OpenAI-compatible API (completions, chat, embeddings),
   (3) Serving with LoRA adapters, speculative decoding, or structured output,
   (4) Tuning production settings (continuous batching, prefix caching, chunked prefill),
-  (5) Multi-GPU/multi-node inference, (6) Debugging OOM, slow TTFT, or throughput issues.
+  (5) Multi-GPU/multi-node inference, (6) Debugging OOM, slow TTFT, or throughput issues,
+  (7) Disaggregated prefill-decode serving, (8) Mixture of Experts (MOE) models with expert parallelism.
   Assumes the user knows how to run vLLM — focuses on configuration and settings.
 ---
 
@@ -337,7 +338,7 @@ llm = LLM(
 
 ### Disaggregated Prefill-Decode Serving
 
-Separate prefill and decode phases onto different vLLM instances for independent TTFT/ITL tuning. See `references/disaggregated-serving.md` for full architecture, all connector types (NixlConnector, LMCacheConnectorV1, P2pNcclConnector, OffloadingConnector, MultiConnector), and K8s deployment patterns.
+Separate prefill and decode phases onto different vLLM instances for independent TTFT/ITL tuning. See `references/disaggregated-serving.md` for full architecture, all connector types, NixlConnector environment variables, request routing, K8s deployment patterns, and troubleshooting.
 
 ```python
 from vllm.config import KVTransferConfig
@@ -350,6 +351,33 @@ llm = LLM(
         kv_connector="NixlConnector",
         kv_role="kv_producer",
     ),
+)
+```
+
+### Mixture of Experts (MOE) Serving
+
+Expert parallelism distributes MOE experts across GPUs instead of tensor-parallel sharding. See `references/moe-serving.md` for all2all backends, EPLB load balancing, multi-node deployment, and MOE + PD disaggregation.
+
+```python
+# Single-node EP with 8 GPUs
+llm = LLM(
+    model="deepseek-ai/DeepSeek-V3-0324",
+    enable_expert_parallel=True,
+    tensor_parallel_size=1,
+    data_parallel_size=8,
+)
+```
+
+```python
+# With EPLB load balancing and pplx backend
+llm = LLM(
+    model="deepseek-ai/DeepSeek-V3-0324",
+    enable_expert_parallel=True,
+    tensor_parallel_size=1,
+    data_parallel_size=8,
+    all2all_backend="pplx",
+    enable_eplb=True,
+    eplb_config={"num_redundant_experts": 2, "log_balancedness": True},
 )
 ```
 
@@ -480,7 +508,8 @@ See `references/troubleshooting.md` for:
 - [Supported models](https://docs.vllm.ai/en/latest/models/supported_models/)
 - [Engine arguments reference](https://docs.vllm.ai/en/latest/serving/engine_args.html)
 - `references/troubleshooting.md` — common errors and fixes
-- `references/disaggregated-serving.md` — PD separation architecture and connectors
+- `references/disaggregated-serving.md` — PD separation architecture, connectors, NixlConnector config, routing, and troubleshooting
+- `references/moe-serving.md` — expert parallelism, all2all backends, EPLB, multi-node MOE deployment
 - `references/lmcache.md` — KV cache sharing and CPU offloading
 - `scripts/benchmark_serving.py` — benchmark vLLM throughput and latency (TTFT, TPOT, p50/p90/p99)
 - `assets/deployment.yaml` — K8s Deployment + Service with GPU, model cache PVC, health probes, and Prometheus annotations
