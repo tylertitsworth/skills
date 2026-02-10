@@ -418,6 +418,7 @@ See `assets/model-configs.yaml` for production K8s Deployments targeting H100s:
 
 | Model | Architecture | Params (Total/Active) | GPUs | Key Settings |
 |-------|-------------|----------------------|------|-------------|
+| Qwen3-235B FP8 | MoE (128e/8a) | 235B / 22B | 4×H100 | Chunked prefill, 262K native context |
 | GLM-4.7 FP8 | Dense + MTP | ~9B | 4×H100 | MTP speculative decoding, `--tool-call-parser glm47` |
 | GLM-4.5-Air FP8 | Dense | — | 8×H100 | `--tool-call-parser glm45`, `--reasoning-parser glm45` |
 | MiniMax-M1 | MoE + Lightning Attn | 456B / 45.9B | 8×H100 | `VLLM_USE_V1=0`, `--quantization experts_int8` |

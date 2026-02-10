@@ -3,6 +3,106 @@
 # Adjust tensor-parallel-size, max-model-len, and gpu-memory-utilization for your cluster.
 
 # ==============================================================================
+# Qwen3-235B-A22B (Alibaba) — 235B total / 22B active MoE
+# 128 experts, 8 active per token. GQA (64Q/4KV). 262K native context.
+# FP8 variant fits on 4×H100; BF16 needs 8×H100.
+# ==============================================================================
+
+# Qwen3-235B-A22B Instruct FP8 — 4×H100
+# Non-thinking mode (no <think> blocks). For thinking variant use Thinking-2507.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-qwen3-235b
+  namespace: ml-serving
+  labels:
+    app: vllm-qwen3-235b
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-qwen3-235b
+  template:
+    metadata:
+      labels:
+        app: vllm-qwen3-235b
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args:
+            - --model
+            - Qwen/Qwen3-235B-A22B-Instruct-2507-FP8
+            - --dtype
+            - bfloat16
+            - --tensor-parallel-size
+            - "4"
+            - --gpu-memory-utilization
+            - "0.92"
+            - --max-model-len
+            - "65536"
+            - --enable-prefix-caching
+            - --enable-chunked-prefill
+            - --port
+            - "8000"
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+          resources:
+            requests:
+              cpu: "8"
+              memory: 64Gi
+              nvidia.com/gpu: "4"
+            limits:
+              nvidia.com/gpu: "4"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 180
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 240
+            periodSeconds: 30
+          volumeMounts:
+            - name: model-cache
+              mountPath: /root/.cache/huggingface
+            - name: dshm
+              mountPath: /dev/shm
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: hf-model-cache
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+# For 262K full context or thinking mode (Qwen3-235B-A22B-Thinking-2507):
+#   - Use 8×H100 with TP=8
+#   - Set VLLM_ATTENTION_BACKEND=DUAL_CHUNK_FLASH_ATTN VLLM_USE_V1=0
+#   - Add: --enforce-eager --max-num-seqs 1 --max-num-batched-tokens 131072
+#   - Add: --enable-reasoning --reasoning-parser deepseek_r1
+
+# ==============================================================================
 # GLM-4.7 (THUDM/Zhipu AI) — 9B dense, MTP speculative decoding
 # FP8 variant recommended for cost efficiency with minimal accuracy loss.
 # ==============================================================================
