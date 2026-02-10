@@ -412,6 +412,17 @@ llm = LLM(
 
 Supports loading from: local filesystem, S3 (`s3://bucket/path`), and other object stores.
 
+### Scale-Worthy Model Configs
+
+See `assets/model-configs.yaml` for production K8s Deployments targeting H100s:
+
+| Model | Architecture | Params (Total/Active) | GPUs | Key Settings |
+|-------|-------------|----------------------|------|-------------|
+| GLM-4.7 FP8 | Dense + MTP | ~9B | 4×H100 | MTP speculative decoding, `--tool-call-parser glm47` |
+| GLM-4.5-Air FP8 | Dense | — | 8×H100 | `--tool-call-parser glm45`, `--reasoning-parser glm45` |
+| MiniMax-M1 | MoE + Lightning Attn | 456B / 45.9B | 8×H100 | `VLLM_USE_V1=0`, `--quantization experts_int8` |
+| Kimi-K2 | MoE + MLA | 1T / 32B | 16×H100 | FP8 + FP8 KV cache, TP=8+PP=2, `--tool-call-parser kimi_k2` |
+
 ## Multi-GPU and Multi-Node
 
 ### Tensor Parallelism (Single Node)
@@ -514,3 +525,4 @@ See `references/troubleshooting.md` for:
 - `scripts/benchmark_serving.py` — benchmark vLLM throughput and latency (TTFT, TPOT, p50/p90/p99)
 - `assets/deployment.yaml` — K8s Deployment + Service with GPU, model cache PVC, health probes, and Prometheus annotations
 - `assets/architecture.md` — Mermaid architecture diagrams
+- `assets/model-configs.yaml` — Production K8s configs for GLM-4.7, GLM-4.5-Air, MiniMax-M1, and Kimi-K2 on H100s
