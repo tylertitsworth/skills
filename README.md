@@ -42,6 +42,7 @@ Skills are loaded dynamically when an agent detects a matching task. The `descri
 | [openai-api](openai-api/) | OpenAI-compatible API integration |
 | [ray-serve](ray-serve/) | Scalable model serving with Ray Serve |
 | [llm-evaluation](llm-evaluation/) | LLM benchmarking with lm-evaluation-harness |
+| [aiconfigurator](aiconfigurator/) | NVIDIA AIConfigurator — optimize LLM serving configs for vLLM on H100/H200 clusters |
 
 ### Data & Models
 
