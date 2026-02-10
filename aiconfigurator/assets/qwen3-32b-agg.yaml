@@ -1,0 +1,30 @@
+# Qwen3 32B — Aggregated, vLLM backend
+#
+# Architecture: Qwen3ForCausalLM (dense)
+# Layers: 64 | Hidden: 5120 | Heads: 64Q/8KV | Head dim: 128
+# Vocab: 151936 | Context: 40960
+# Total params: ~32B | BF16: ~64 GB | FP8: ~32 GB
+# FP8 fits on single H100 80 GB (~32 GB model + ~46 GB KV headroom).
+
+exps:
+  - qwen3_32b_agg
+
+qwen3_32b_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 8
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2048
+  osl: 512
+  config:
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [1, 2, 4]
+      tp_list: [1, 2, 4]
+      pp_list: [1]
+      dp_list: [1]

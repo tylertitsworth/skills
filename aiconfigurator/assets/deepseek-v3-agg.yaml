@@ -1,0 +1,39 @@
+# DeepSeek-V3 (671B MoE) — Aggregated, vLLM backend
+#
+# Architecture: DeepseekV3ForCausalLM (MoE + MLA)
+# Layers: 61 (3 dense + 58 MoE) | Hidden: 7168 | Heads: 128Q/128KV
+# MLA: q_lora_rank=1536, kv_lora_rank=512, qk_nope=128, qk_rope=64
+# Experts: 256 routed (8 active, n_group=8) + 1 shared | MoE intermediate: 2048
+# Dense intermediate: 18432 | Vocab: 129280 | Context: 163840
+# MTP: 1 next-token prediction layer (num_nextn_predict_layers: 1)
+# Total params: 671B | Active: ~37B | FP8 (native): ~335 GB
+# FP8 with EP=8: ~42 GB experts/GPU + ~10 GB shared ≈ 52 GB/GPU
+
+exps:
+  - deepseek_v3_agg
+
+deepseek_v3_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "deepseek-ai/DeepSeek-V3"
+  total_gpus: 32
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2048
+  osl: 512
+  prefix: 0
+  config:
+    nextn: 1
+    nextn_accept_rates: [0.85, 0, 0, 0, 0]
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
+      kvcache_quant_mode: "fp8"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [1]
+      pp_list: [1]
+      dp_list: [1]
+      moe_tp_list: [1]
+      moe_ep_list: [8]

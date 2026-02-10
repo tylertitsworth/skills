@@ -1,0 +1,56 @@
+# GLM-4.7 — Disaggregated, vLLM backend
+#
+# Architecture: Glm4MoeForCausalLM (MoE)
+# Layers: 92 | Hidden: 5120 | Heads: 96Q/8KV | Head dim: 128
+# Experts: 160 routed (8 active) + 1 shared | MoE intermediate: 1536
+# Dense intermediate: 12288 | First 3 layers dense | Vocab: 151552 | Context: 202752
+# MTP: 1 next-token prediction layer (num_nextn_predict_layers: 1)
+# Total params: estimated ~200-250B (MoE) | FP8: ~100-125 GB
+#
+# NOTE: Glm4MoeForCausalLM may not be in AIConfigurator's supported model list.
+# Use `aiconfigurator cli support` to verify before running.
+
+exps:
+  - glm_4_7_disagg
+
+glm_4_7_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "zai-org/GLM-4.7-FP8"
+  total_gpus: 16
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2048
+  osl: 512
+  config:
+    nextn: 1
+    nextn_accept_rates: [0.90, 0, 0, 0, 0]
+    prefill_worker_config:
+      gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [4, 8]
+      tp_list: [4, 8]
+      pp_list: [1]
+      dp_list: [1]
+      moe_tp_list: [4, 8]
+      moe_ep_list: [1]
+    decode_worker_config:
+      gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [2, 4]
+      tp_list: [2, 4]
+      pp_list: [1]
+      dp_list: [1]
+      moe_tp_list: [2, 4]
+      moe_ep_list: [1]
+    replica_config:
+      num_gpu_per_replica: [8, 12, 16]
+      max_gpu_per_replica: 16
+      max_prefill_worker: 4
+      max_decode_worker: 8

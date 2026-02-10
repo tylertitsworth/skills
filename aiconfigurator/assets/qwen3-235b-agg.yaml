@@ -1,0 +1,34 @@
+# Qwen3-235B-A22B — Aggregated, vLLM backend
+#
+# Architecture: Qwen3MoeForCausalLM (MoE)
+# Layers: 94 | Hidden: 4096 | Heads: 64Q/4KV | Head dim: 128
+# Experts: 128 routed (8 active) | MoE intermediate: 1536
+# Dense intermediate: 12288 | Vocab: 151936 | Context: 262144
+# Total params: ~235B | Active: ~22B
+# FP8: ~235 GB total weights → TP=4 ≈ 59 GB/GPU (fits H100 80 GB, tight KV headroom)
+
+exps:
+  - qwen3_235b_agg
+
+qwen3_235b_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "Qwen/Qwen3-235B-A22B-Instruct-2507-FP8"
+  total_gpus: 8
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2048
+  osl: 512
+  config:
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      moe_quant_mode: "fp8_block"
+      kvcache_quant_mode: "fp8"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [4, 8]
+      tp_list: [4, 8]
+      pp_list: [1]
+      dp_list: [1]
+      moe_tp_list: [4, 8]
+      moe_ep_list: [1]
