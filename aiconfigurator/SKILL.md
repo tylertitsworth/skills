@@ -8,7 +8,7 @@ description: >
   (4) Generating Dynamo/K8s deployment configs from optimization results,
   (5) Tuning quantization settings (FP8, FP8-block, INT8, NVFP4) per component,
   (6) Planning MOE model deployments (expert parallelism, attention DP, wide EP),
-  (7) Comparing multi-framework performance (TensorRT-LLM, vLLM, SGLang).
+  (7) Comparing aggregated vs disaggregated performance for vLLM on H100 clusters.
 ---
 
 # AIConfigurator
@@ -71,7 +71,7 @@ pip3 install .
 
 # Docker
 docker run -it --rm nvcr.io/nvidia/aiconfigurator:latest \
-  aiconfigurator cli default --model LLAMA3.1_70B --total_gpus 16 --system h100_sxm
+  aiconfigurator cli default --model LLAMA3.1_70B --total_gpus 16 --system h100_sxm --backend vllm
 ```
 
 ## CLI Reference
@@ -86,10 +86,10 @@ Compares aggregated vs disaggregated, searches all valid parallelism combination
 aiconfigurator cli default \
   --model_path Qwen/Qwen3-32B \
   --total_gpus 32 \
-  --system h200_sxm \
+  --system h100_sxm \
   --isl 4000 --osl 500 \
   --ttft 300 --tpot 10 \
-  --backend trtllm \
+  --backend vllm \
   --save_dir ./configs
 ```
 
@@ -97,8 +97,8 @@ aiconfigurator cli default \
 |---|---|---|---|
 | `--model_path` / `--model` | ✅ | — | HuggingFace model ID or local path with `config.json` |
 | `--total_gpus` | ✅ | — | Total GPUs available for deployment |
-| `--system` | ✅ | — | GPU system: `h200_sxm`, `h100_sxm`, `a100_sxm`, `b200_sxm`, `gb200_sxm` |
-| `--backend` | | `trtllm` | Inference backend: `trtllm`, `vllm`, `sglang` |
+| `--system` | ✅ | — | GPU system: `h100_sxm`, `h200_sxm`, `a100_sxm`, `b200_sxm`, `gb200_sxm` |
+| `--backend` | | `trtllm` | Inference backend: `vllm`, `trtllm`, `sglang`. **Use `vllm` for vLLM deployments.** |
 | `--backend_version` | | latest | Specific backend version |
 | `--isl` | | `4000` | Input sequence length (tokens) |
 | `--osl` | | `1000` | Output sequence length (tokens) |
@@ -127,7 +127,8 @@ Generates a working config without parameter sweep. Useful for quick deployment 
 aiconfigurator cli generate \
   --model_path Qwen/Qwen3-32B \
   --total_gpus 8 \
-  --system h200_sxm
+  --system h100_sxm \
+  --backend vllm
 ```
 
 Calculates minimum TP that fits: `TP * VRAM_per_GPU > 1.5 * model_weight_size`. No performance optimization.
@@ -149,8 +150,8 @@ Verify model + GPU + backend support:
 ```bash
 aiconfigurator cli support \
   --model_path Qwen/Qwen3-32B \
-  --system h200_sxm \
-  --backend trtllm
+  --system h100_sxm \
+  --backend vllm
 ```
 
 ### Generator Flags (with `--save_dir`)
@@ -169,7 +170,7 @@ When `--save_dir` is specified, AIConfigurator generates deployment configs:
 ```bash
 # Generate configs with custom namespace and model path
 aiconfigurator cli default \
-  --model_path Qwen/Qwen3-32B --total_gpus 32 --system h200_sxm \
+  --model_path Qwen/Qwen3-32B --total_gpus 32 --system h100_sxm --backend vllm \
   --save_dir ./output \
   --generator-set K8sConfig.k8s_namespace=dynamo \
   --generator-set ServiceConfig.model_path=Qwen/Qwen3-32B-FP8
@@ -184,7 +185,8 @@ from aiconfigurator.cli import cli_default, cli_exp, cli_generate, cli_support
 result = cli_default(
     model_path="Qwen/Qwen3-32B",
     total_gpus=32,
-    system="h200_sxm",
+    system="h100_sxm",
+    backend="vllm",
     ttft=300,
     tpot=10,
     isl=4000,
@@ -198,38 +200,48 @@ result = cli_exp(config={
         "serving_mode": "disagg",
         "model_path": "deepseek-ai/DeepSeek-V3",
         "total_gpus": 64,
-        "system_name": "h200_sxm",
+        "system_name": "h100_sxm",
+        "backend_name": "vllm",
         "isl": 4000,
         "osl": 1000,
     }
 })
 
 # Quick naive config
-result = cli_generate(model_path="Qwen/Qwen3-32B", total_gpus=8, system="h200_sxm")
+result = cli_generate(model_path="Qwen/Qwen3-32B", total_gpus=8, system="h100_sxm", backend="vllm")
 print(result["parallelism"])  # {'tp': 1, 'pp': 1, 'replicas': 8, 'gpus_used': 8}
 
 # Check support
-agg, disagg = cli_support(model_path="Qwen/Qwen3-32B", system="h200_sxm")
+agg, disagg = cli_support(model_path="Qwen/Qwen3-32B", system="h100_sxm", backend="vllm")
 ```
 
 ## Supported Hardware and Models
 
 ### GPU Systems
 
-| System | GPUs | Status |
-|---|---|---|
-| `h200_sxm` | H200 SXM | ✅ Full support |
-| `h100_sxm` | H100 SXM | ✅ Full support |
-| `a100_sxm` | A100 SXM | ✅ (TRT-LLM, vLLM) |
-| `b200_sxm` | B200 SXM | ✅ (TRT-LLM, SGLang) |
-| `gb200_sxm` | GB200 SXM | ✅ (TRT-LLM) |
+| System | GPUs | VRAM | vLLM Support |
+|---|---|---|---|
+| **`h100_sxm`** | **H100 SXM** | **80 GB** | **✅ Full support** |
+| `h200_sxm` | H200 SXM | 141 GB | ✅ Full support |
+| `a100_sxm` | A100 SXM | 80 GB | ✅ Supported |
+| `b200_sxm` | B200 SXM | 192 GB | Preview |
+| `gb200_sxm` | GB200 SXM | 384 GB | Preview |
+
+### H100 Memory Budget (80 GB per GPU)
+
+| Component | Typical Allocation |
+|---|---|
+| Model weights (bf16) | Depends on model / TP (e.g., 70B ÷ TP=4 ≈ 35 GB/GPU) |
+| Model weights (FP8) | ~Half of bf16 |
+| KV cache | Remaining after weights — controlled by `gpu_memory_utilization` |
+| CUDA graphs + overhead | ~1-2 GB |
 
 ### Backend Framework Support
 
 | Backend | Dense Models | MOE Models | Status |
 |---|---|---|---|
-| `trtllm` (TensorRT-LLM) | ✅ | ✅ | Production |
-| `vllm` | ✅ | ❌ | Being evaluated |
+| **`vllm`** | **✅** | **Dense only** | **Recommended — use `--backend vllm`** |
+| `trtllm` (TensorRT-LLM) | ✅ | ✅ | Production (default) |
 | `sglang` | ✅ | ✅ | Being evaluated |
 
 ### Supported Model Families
@@ -308,8 +320,8 @@ The webapp provides the same functionality as the CLI with a visual interface. A
 - [Paper: arXiv:2601.06288](https://arxiv.org/abs/2601.06288)
 - `references/experiment-config.md` — full YAML experiment schema, quantization options, parallelism search space
 - `references/advanced-tuning.md` — correction scales, replica config, practical search space reduction
-- `assets/deepseek-v3-disagg.yaml` — DeepSeek-V3 disaggregated on 64× H200
-- `assets/llama-405b-disagg.yaml` — Llama 3.1 405B disaggregated on 32× H100
-- `assets/qwen3-32b-agg.yaml` — Qwen3 32B aggregated on 8× H200
-- `assets/mixtral-8x22b-disagg.yaml` — Mixtral 8x22B MOE disaggregated on 16× H200
-- `assets/deepseek-r1-gb200.yaml` — DeepSeek-R1 on GB200 with MTP
+- `assets/llama-405b-disagg.yaml` — Llama 3.1 405B disaggregated on 32× H100, vLLM
+- `assets/llama-70b-disagg.yaml` — Llama 3.1 70B disaggregated on 8× H100, vLLM
+- `assets/qwen3-32b-agg.yaml` — Qwen3 32B aggregated on 8× H100, vLLM
+- `assets/qwen3-32b-disagg.yaml` — Qwen3 32B disaggregated on 16× H100, vLLM with strict SLAs
+- `assets/deepseek-v3-disagg.yaml` — DeepSeek-V3 671B MOE disaggregated on 64× H100, vLLM

@@ -1,0 +1,49 @@
+# Qwen3 32B — Disaggregated on 16× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 100ms, TPOT ≤ 5ms (strict SLAs)
+# ISL=2000, OSL=500
+#
+# Strict SLAs push toward disagg — isolate prefill latency from decode.
+# At FP8, 32B fits on TP=1 (32 GB model, 46 GB KV on H100 80 GB).
+# More replicas = higher throughput. Prefill TP=2 for fast TTFT, decode TP=1 for max concurrency.
+
+exps:
+  - qwen3_32b_disagg
+
+qwen3_32b_disagg:
+  mode: "patch"
+  serving_mode: "disagg"
+  model_path: "Qwen/Qwen3-32B"
+  total_gpus: 16
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2000
+  osl: 500
+  ttft: 100.0
+  tpot: 5.0
+  config:
+    prefill_worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [1, 2]
+      tp_list: [1, 2]
+      pp_list: [1]
+      dp_list: [1]
+    decode_worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "fp8"         # FP8 KV on decode for max concurrency
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [1, 2]
+      tp_list: [1, 2]
+      pp_list: [1]
+      dp_list: [1]
+    replica_config:
+      num_gpu_per_replica: [4, 8, 16]
+      max_gpu_per_replica: 16
+      max_prefill_worker: 8
+      max_decode_worker: 8
+    advanced_tuning_config:
+      prefill_max_batch_size: 1
+      decode_max_batch_size: 128        # Lower for strict TPOT=5ms

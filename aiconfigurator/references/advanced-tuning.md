@@ -32,17 +32,19 @@ worker_config:
 ### Large Dense Models (405B+)
 
 ```yaml
-# Llama 3.1 405B — needs at least TP=8 on H100 80GB for bf16
+# Llama 3.1 405B on H100 80 GB — 405B bf16 ≈ 810 GB, needs TP=8 minimum
+# At FP8: ~405 GB → TP=8 gives ~51 GB/GPU, leaving ~27 GB for KV cache
 worker_config:
   num_gpu_per_worker: [8]
   tp_list: [8]
-  pp_list: [1, 2]        # PP useful for 405B if TP=8 isn't enough
+  pp_list: [1, 2]        # PP useful for 405B if KV cache is too tight at TP=8
 ```
 
 ### MOE Models (DeepSeek-V3, Mixtral)
 
 ```yaml
-# DeepSeek-V3 — 671B total, ~37B active params
+# DeepSeek-V3 on H100 80 GB — 671B total, ~335 GB at FP8
+# EP=8: ~42 GB experts/GPU + ~10 GB shared = ~52 GB, leaving ~26 GB for KV
 prefill_worker_config:
   num_gpu_per_worker: [8]
   tp_list: [1]

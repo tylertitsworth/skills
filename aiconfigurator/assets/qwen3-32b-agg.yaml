@@ -1,7 +1,10 @@
-# Qwen3 32B — Aggregated on 8× H200 SXM
+# Qwen3 32B — Aggregated on 8× H100 SXM (80 GB), vLLM backend
 # Target: TTFT ≤ 200ms, TPOT ≤ 10ms, ISL=2000, OSL=500
-# Small-medium dense model. Aggregated is often optimal at this scale.
-# Compares TP=2 (4 replicas) vs TP=4 (2 replicas) vs TP=1 (8 replicas).
+#
+# 32B in bf16 ≈ 64 GB → fits on single H100 at FP8 (~32 GB), leaving ~46 GB for KV cache.
+# At this model size, aggregated serving often matches or beats disagg.
+# Search TP=[1,2,4] to find the sweet spot between replicas and per-replica performance.
+# TP=1 → 8 replicas (max throughput), TP=2 → 4 replicas (lower TTFT), TP=4 → 2 replicas.
 
 exps:
   - qwen3_32b_agg
@@ -11,8 +14,8 @@ qwen3_32b_agg:
   serving_mode: "agg"
   model_path: "Qwen/Qwen3-32B"
   total_gpus: 8
-  system_name: "h200_sxm"
-  backend_name: "trtllm"
+  system_name: "h100_sxm"
+  backend_name: "vllm"
   isl: 2000
   osl: 500
   ttft: 200.0
@@ -23,7 +26,7 @@ qwen3_32b_agg:
       kvcache_quant_mode: "float16"
       fmha_quant_mode: "float16"
       comm_quant_mode: "half"
-      num_gpu_per_worker: [1, 2, 4, 8]
-      tp_list: [1, 2, 4, 8]
+      num_gpu_per_worker: [1, 2, 4]     # TP=1 fits at FP8 on H100 80 GB
+      tp_list: [1, 2, 4]
       pp_list: [1]
       dp_list: [1]

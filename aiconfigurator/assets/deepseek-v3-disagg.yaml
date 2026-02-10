@@ -1,7 +1,12 @@
-# DeepSeek-V3 (671B MOE) — Disaggregated on 64× H200 SXM
+# DeepSeek-V3 (671B MOE) — Disaggregated on 64× H100 SXM (80 GB), vLLM backend
 # Target: TTFT ≤ 500ms, TPOT ≤ 15ms, ISL=4000, OSL=1000
-# Expects FP8-block quantization for both GEMM and MOE layers.
-# MTP enabled (nextn=1) with 85% first-token accept rate.
+#
+# 671B MOE with 256 experts. At FP8-block, expert params ≈ 335 GB total.
+# With EP=8: ~42 GB experts/GPU + ~10 GB shared layers = ~52 GB, leaving ~26 GB for KV on H100 80 GB.
+# FP8 KV cache recommended to maximize concurrent sequences.
+#
+# Note: vLLM MOE support via AIConfigurator may be limited. If unsupported,
+# use backend_name: "trtllm" or "sglang" for MOE models.
 
 exps:
   - deepseek_v3_disagg
@@ -11,8 +16,8 @@ deepseek_v3_disagg:
   serving_mode: "disagg"
   model_path: "deepseek-ai/DeepSeek-V3"
   total_gpus: 64
-  system_name: "h200_sxm"
-  backend_name: "trtllm"
+  system_name: "h100_sxm"
+  backend_name: "vllm"
   isl: 4000
   osl: 1000
   prefix: 0

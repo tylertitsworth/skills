@@ -16,7 +16,7 @@ experiment_name_1:
   serving_mode: "disagg"     # Required: "agg" or "disagg"
   model_path: "..."          # Required: HuggingFace model ID or local path
   total_gpus: 32             # Required: total GPUs for this experiment
-  system_name: "h200_sxm"   # Required: GPU system name
+  system_name: "h100_sxm"   # Required: GPU system name
   # ... optional fields and config section
 ```
 
@@ -28,9 +28,9 @@ experiment_name_1:
 | `serving_mode` | ✅ | — | `"agg"` (aggregated) or `"disagg"` (disaggregated) |
 | `model_path` | ✅ | — | HuggingFace model ID (e.g., `Qwen/Qwen3-32B`) or local path |
 | `total_gpus` | ✅ | — | Total GPUs available |
-| `system_name` | ✅ | — | GPU system: `h200_sxm`, `h100_sxm`, `a100_sxm`, `b200_sxm`, `gb200_sxm` |
+| `system_name` | ✅ | — | GPU system: `h100_sxm`, `h100_sxm`, `a100_sxm`, `b200_sxm`, `gb200_sxm` |
 | `decode_system_name` | | same as `system_name` | Different GPU type for decode (heterogeneous) |
-| `backend_name` | | `trtllm` | Backend: `trtllm`, `vllm`, `sglang` |
+| `backend_name` | | `trtllm` | Backend: `vllm`, `trtllm`, `sglang`. Use `vllm` for vLLM deployments. |
 | `backend_version` | | latest | Specific version |
 | `database_mode` | | `SILICON` | Data source: `SILICON`, `HYBRID`, `EMPIRICAL`, `SOL`, `SOL_FULL` |
 | `isl` | | `4000` | Input sequence length |
@@ -205,21 +205,21 @@ baseline_agg:
   serving_mode: "agg"
   model_path: "deepseek-ai/DeepSeek-V3"
   total_gpus: 64
-  system_name: "h200_sxm"
+  system_name: "h100_sxm"
 
 optimized_disagg:
   mode: "patch"
   serving_mode: "disagg"
   model_path: "deepseek-ai/DeepSeek-V3"
   total_gpus: 64
-  system_name: "h200_sxm"
+  system_name: "h100_sxm"
 
 w4afp8_disagg:
   mode: "patch"
   serving_mode: "disagg"
   model_path: "deepseek-ai/DeepSeek-V3"
   total_gpus: 64
-  system_name: "h200_sxm"
+  system_name: "h100_sxm"
   config:
     prefill_worker_config:
       moe_quant_mode: "w4afp8"
@@ -237,6 +237,6 @@ hetero_experiment:
   serving_mode: "disagg"
   model_path: "Qwen/Qwen3-32B"
   total_gpus: 16
-  system_name: "h200_sxm"           # Prefill GPU type
+  system_name: "h100_sxm"           # Prefill GPU type
   decode_system_name: "h100_sxm"    # Decode GPU type (different!)
 ```
