@@ -1,0 +1,32 @@
+# MiniMax-M1 — Aggregated on 8× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 300ms, TPOT ≤ 15ms, ISL=2000, OSL=500
+#
+# 456B MoE (45.9B active) + Lightning Attention for long context.
+# Expert INT8 quantization required (--quantization experts_int8).
+# TP=8 minimum — all expert weights must be distributed across GPUs.
+# NOTE: Requires V0 engine (VLLM_USE_V1=0) and --trust-remote-code.
+
+exps:
+  - minimax_m1_agg
+
+minimax_m1_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "MiniMaxAI/MiniMax-M1-40k"
+  total_gpus: 8
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2000
+  osl: 500
+  ttft: 300.0
+  tpot: 15.0
+  config:
+    worker_config:
+      gemm_quant_mode: "int8"           # experts_int8 quantization
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [8]
+      tp_list: [8]
+      pp_list: [1]
+      dp_list: [1]

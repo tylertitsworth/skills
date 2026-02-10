@@ -321,7 +321,10 @@ The webapp provides the same functionality as the CLI with a visual interface. A
 - `references/experiment-config.md` — full YAML experiment schema, quantization options, parallelism search space
 - `references/advanced-tuning.md` — correction scales, replica config, practical search space reduction
 - `assets/llama-405b-disagg.yaml` — Llama 3.1 405B disaggregated on 32× H100, vLLM
-- `assets/llama-70b-disagg.yaml` — Llama 3.1 70B disaggregated on 8× H100, vLLM
 - `assets/qwen3-32b-agg.yaml` — Qwen3 32B aggregated on 8× H100, vLLM
 - `assets/qwen3-32b-disagg.yaml` — Qwen3 32B disaggregated on 16× H100, vLLM with strict SLAs
-- `assets/deepseek-v3-disagg.yaml` — DeepSeek-V3 671B MOE disaggregated on 64× H100, vLLM
+- `assets/qwen3-235b-agg.yaml` — Qwen3-235B-A22B MoE aggregated on 8× H100, FP8, vLLM
+- `assets/glm-4.7-agg.yaml` — GLM-4.7 FP8 aggregated on 8× H100, vLLM
+- `assets/minimax-m1-agg.yaml` — MiniMax-M1 456B MoE aggregated on 8× H100, experts_int8, vLLM
+- `assets/kimi-k2-disagg.yaml` — Kimi-K2 1T MoE disaggregated on 32× H100, FP8, vLLM
+- `assets/deepseek-v3-disagg.yaml` — DeepSeek-V3 671B MoE disaggregated on 64× H100, vLLM

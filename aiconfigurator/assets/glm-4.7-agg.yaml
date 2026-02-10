@@ -1,0 +1,32 @@
+# GLM-4.7 — Aggregated on 8× H100 SXM (80 GB), vLLM backend
+# Target: TTFT ≤ 150ms, TPOT ≤ 8ms, ISL=2000, OSL=500
+#
+# ~9B dense model. FP8 ≈ 9 GB → fits on single H100 with massive KV cache headroom.
+# TP=1 maximizes replicas (8 replicas on 8 GPUs).
+# TP=2 lowers TTFT for long-context workloads (65K+ context).
+# MTP speculative decoding (built-in draft layers) further reduces decode latency.
+
+exps:
+  - glm_4_7_agg
+
+glm_4_7_agg:
+  mode: "patch"
+  serving_mode: "agg"
+  model_path: "zai-org/GLM-4.7-FP8"
+  total_gpus: 8
+  system_name: "h100_sxm"
+  backend_name: "vllm"
+  isl: 2000
+  osl: 500
+  ttft: 150.0
+  tpot: 8.0
+  config:
+    worker_config:
+      gemm_quant_mode: "fp8_block"
+      kvcache_quant_mode: "float16"
+      fmha_quant_mode: "float16"
+      comm_quant_mode: "half"
+      num_gpu_per_worker: [1, 2, 4]
+      tp_list: [1, 2, 4]
+      pp_list: [1]
+      dp_list: [1]
