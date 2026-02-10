@@ -368,12 +368,17 @@ llm = LLM(
 )
 ```
 
-```bash
-# With EPLB and pplx backend
-vllm serve deepseek-ai/DeepSeek-V3-0324 \
-  --tensor-parallel-size 1 --data-parallel-size 8 \
-  --enable-expert-parallel --all2all-backend pplx \
-  --enable-eplb --eplb-config '{"num_redundant_experts":2,"log_balancedness":true}'
+```python
+# With EPLB load balancing and pplx backend
+llm = LLM(
+    model="deepseek-ai/DeepSeek-V3-0324",
+    enable_expert_parallel=True,
+    tensor_parallel_size=1,
+    data_parallel_size=8,
+    all2all_backend="pplx",
+    enable_eplb=True,
+    eplb_config={"num_redundant_experts": 2, "log_balancedness": True},
+)
 ```
 
 ### LMCache (KV Cache Sharing)
@@ -507,6 +512,5 @@ See `references/troubleshooting.md` for:
 - `references/moe-serving.md` — expert parallelism, all2all backends, EPLB, multi-node MOE deployment
 - `references/lmcache.md` — KV cache sharing and CPU offloading
 - `scripts/benchmark_serving.py` — benchmark vLLM throughput and latency (TTFT, TPOT, p50/p90/p99)
-- `scripts/disagg_setup.sh` — template script to launch prefill + decode instances with NixlConnector
 - `assets/deployment.yaml` — K8s Deployment + Service with GPU, model cache PVC, health probes, and Prometheus annotations
 - `assets/architecture.md` — Mermaid architecture diagrams
