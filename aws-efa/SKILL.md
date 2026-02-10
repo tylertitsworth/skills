@@ -1,6 +1,6 @@
 ---
 name: aws-efa
-description: AWS Elastic Fabric Adapter (EFA) — architecture, SRD protocol, GPUDirect RDMA, NCCL integration, EKS node configuration, and environment tuning. Use when understanding or configuring EFA for distributed GPU training on EKS, troubleshooting multi-node communication, or tuning NCCL over EFA.
+description: AWS Elastic Fabric Adapter (EFA) — architecture, SRD protocol, GPUDirect RDMA, NCCL integration, EKS node configuration, and environment tuning. Use when understanding or configuring EFA for distributed GPU training on EKS, troubleshooting multi-node communication, tuning NCCL over EFA, or configuring EFA for disaggregated serving KV cache transfer.
 ---
 
 # AWS Elastic Fabric Adapter (EFA)
@@ -291,6 +291,88 @@ For p5/p5e/trn2, interfaces on network cards 1+ can be **EFA-only** (no IP stack
 - Requires: VPC CNI ≥ 1.18.5, Amazon Linux 2 AMI ≥ v20240928
 - Cannot be configured via eksctl — requires custom launch template with `InterfaceType: efa-only`
 
+## EFA for Disaggregated Serving (KV Cache Transfer)
+
+Disaggregated prefill-decode (PD) serving requires high-bandwidth, low-latency KV cache transfer between prefill and decode instances. EFA provides the RDMA transport that makes this practical at scale.
+
+### Why EFA Matters for PD
+
+KV cache transfer size scales with model and sequence length. For Llama 70B at 8K context in bf16, a single request's KV cache is **~5 GB**. At production request rates, this demands sustained multi-GB/s network throughput that TCP cannot deliver reliably.
+
+| Transport | Bandwidth | Latency | Production? |
+|---|---|---|---|
+| TCP/Ethernet | ~10-12 GB/s (100 GbE) | ~100-500 μs | Marginal |
+| EFA + UCX (RDMA) | ~50-80 GB/s (p4d), ~300+ GB/s (p5) | ~5-20 μs | ✅ |
+| EFA + GPUDirect RDMA | Same bandwidth, zero-copy | ~2-10 μs | ✅ Best |
+
+### UCX over EFA Configuration
+
+vLLM's NixlConnector uses UCX as the default transport. UCX auto-detects EFA via libfabric:
+
+```bash
+# Environment for vLLM prefill/decode instances on EFA nodes
+export UCX_TLS=all                    # Let UCX select best transport (will use EFA)
+export UCX_NET_DEVICES=all            # Use all available network devices
+export VLLM_NIXL_SIDE_CHANNEL_PORT=5600
+
+vllm serve meta-llama/Llama-3.1-70B-Instruct \
+  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_buffer_device":"cuda"}'
+```
+
+Setting `kv_buffer_device="cuda"` enables GPUDirect RDMA — KV cache transfers directly between GPU memories without CPU staging.
+
+### Kubernetes Pod Configuration
+
+For PD serving pods on EFA nodes, request EFA interfaces just like training pods:
+
+```yaml
+# Both prefill and decode pods need EFA access
+containers:
+- name: vllm
+  env:
+  - name: UCX_TLS
+    value: "all"
+  - name: UCX_NET_DEVICES
+    value: "all"
+  - name: VLLM_NIXL_SIDE_CHANNEL_PORT
+    value: "5600"
+  resources:
+    requests:
+      nvidia.com/gpu: "4"
+      vpc.amazonaws.com/efa: "32"       # Request all EFA interfaces
+      hugepages-2Mi: "5120Mi"
+    limits:
+      nvidia.com/gpu: "4"
+      vpc.amazonaws.com/efa: "32"
+      hugepages-2Mi: "5120Mi"
+  volumeMounts:
+  - name: hugepages
+    mountPath: /dev/hugepages
+```
+
+### MOE + PD on EFA
+
+MOE models with expert parallelism generate two concurrent network traffic patterns over EFA:
+1. **All2all expert routing** — tokens routed between GPUs for expert computation
+2. **KV cache transfer** — PD KV cache between prefill and decode instances
+
+On p5 instances with 32 EFA interfaces, bandwidth is sufficient for both. On p4d (4 EFA), contention is possible — monitor with NCCL debug logging.
+
+### Verifying KV Transfer Uses EFA
+
+Set `UCX_LOG_LEVEL=info` to confirm UCX selects EFA:
+
+```bash
+UCX_LOG_LEVEL=info vllm serve ... 2>&1 | grep -i "efa\|transport"
+# Should show: "using transport: efa" or similar
+```
+
+If UCX falls back to TCP (`using transport: tcp`), check:
+1. EFA device plugin is running and EFA interfaces are allocated to the pod
+2. `vpc.amazonaws.com/efa` resource is requested in pod spec
+3. Security group allows all traffic between PD pods
+4. Placement group co-locates prefill and decode nodes
+
 ## Cross-References
 
 - [aws-fsx](../aws-fsx/) — FSx storage for training data on EFA-enabled nodes
@@ -298,6 +380,8 @@ For p5/p5e/trn2, interfaces on network cards 1+ can be **EFA-only** (no IP stack
 - [fsdp](../fsdp/) — FSDP distributed training using EFA for all-reduce
 - [megatron-lm](../megatron-lm/) — Megatron-LM multi-node training over EFA
 - [ray-train](../ray-train/) — Ray Train distributed jobs on EFA-enabled clusters
+- [vllm](../vllm/) — vLLM disaggregated serving using EFA for KV cache transfer
+- [ray-serve](../ray-serve/) — Ray Serve PD serving on EFA-enabled clusters
 
 ## Reference
 
