@@ -376,3 +376,4 @@ groups:
 - [LogQL docs](https://grafana.com/docs/loki/latest/query/)
 - [LogQL metric queries](https://grafana.com/docs/loki/latest/query/metric_queries/)
 - [Log pipeline](https://grafana.com/docs/loki/latest/query/log_queries/)
+- `assets/ml_queries.md` — ready-to-use LogQL queries for training, inference, KubeRay, Kueue, and Flyte monitoring

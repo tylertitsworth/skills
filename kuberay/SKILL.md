@@ -574,3 +574,4 @@ For debugging common KubeRay issues, see `references/troubleshooting.md`.
 - `references/rayjob.md` — RayJob submitter deep dive
 - `references/troubleshooting.md` — common KubeRay issues
 
+- `assets/architecture.md` — Mermaid architecture diagrams

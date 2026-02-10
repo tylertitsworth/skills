@@ -482,3 +482,4 @@ See `references/troubleshooting.md` for:
 - `references/troubleshooting.md` — common errors and fixes
 - `references/disaggregated-serving.md` — PD separation architecture and connectors
 - `references/lmcache.md` — KV cache sharing and CPU offloading
+- `assets/architecture.md` — Mermaid architecture diagrams

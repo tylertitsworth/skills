@@ -609,3 +609,4 @@ For installation options, Helm configuration, KueueConfiguration reference, metr
 - `references/multi-tenant.md` — multi-tenancy patterns
 - `references/troubleshooting.md` — common issues and fixes
 
+- `assets/architecture.md` — Mermaid architecture diagrams

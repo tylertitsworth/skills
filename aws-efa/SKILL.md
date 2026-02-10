@@ -305,3 +305,5 @@ For p5/p5e/trn2, interfaces on network cards 1+ can be **EFA-only** (no IP stack
 - [EFA EKS best practices](https://aws.github.io/aws-eks-best-practices/networking/efa/)
 - [aws-ofi-nccl GitHub](https://github.com/aws/aws-ofi-nccl)
 - `references/troubleshooting.md` — NCCL debug, diagnostics, bandwidth expectations
+- `scripts/check_efa.sh` — verify EFA device availability, libfabric provider, GPU, and NCCL config on a node
+- `assets/architecture.md` — EFA network stack, GPUDirect RDMA flow, and EKS multi-node topology diagrams

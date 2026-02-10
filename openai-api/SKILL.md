@@ -696,3 +696,4 @@ response.stream_to_file("output.mp3")
 - [openai-python SDK](https://github.com/openai/openai-python)
 - [tiktoken](https://github.com/openai/tiktoken)
 - `references/patterns.md` — common integration patterns
+- `assets/structured_output.py` — structured output examples with Pydantic, response_format, and Responses API reasoning

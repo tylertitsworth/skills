@@ -1,0 +1,49 @@
+# Example Hydra config for an ML training experiment.
+# Usage: python train.py
+# Override: python train.py model.lr=1e-4 data.batch_size=32 trainer.gpus=4
+# Multirun: python train.py --multirun model.lr=1e-3,1e-4,1e-5
+
+defaults:
+  - _self_
+  - override hydra/launcher: joblib  # parallel multirun
+
+model:
+  name: transformer
+  hidden_size: 768
+  num_layers: 12
+  num_heads: 12
+  dropout: 0.1
+  lr: 3e-4
+  weight_decay: 0.01
+  warmup_steps: 1000
+
+data:
+  dataset: wikitext-103
+  batch_size: 16
+  seq_length: 512
+  num_workers: 4
+  pin_memory: true
+
+trainer:
+  gpus: 1
+  epochs: 10
+  gradient_clip: 1.0
+  mixed_precision: bf16    # bf16, fp16, or fp32
+  compile: true            # torch.compile
+  save_every: 1000
+  eval_every: 500
+  checkpoint_dir: ${hydra:runtime.cwd}/checkpoints
+
+wandb:
+  project: ${model.name}-training
+  entity: null
+  tags:
+    - ${model.name}
+    - ${data.dataset}
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: sweeps/${now:%Y-%m-%d}
+    subdir: ${hydra.job.num}

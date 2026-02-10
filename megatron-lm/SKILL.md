@@ -234,3 +234,4 @@ See `references/troubleshooting.md` for:
 - [Megatron Core docs](https://docs.nvidia.com/Megatron-Core/)
 - [Megatron Bridge](https://github.com/NVIDIA-NeMo/Megatron-Bridge)
 - `references/troubleshooting.md` — common errors and fixes
+- `assets/architecture.md` — Mermaid architecture diagrams

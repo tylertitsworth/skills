@@ -425,3 +425,4 @@ See `references/troubleshooting.md` for:
 - [FSDP API Reference](https://pytorch.org/docs/stable/fsdp.html)
 - [Accelerate FSDP docs](https://huggingface.co/docs/accelerate/usage_guides/fsdp)
 - `references/troubleshooting.md` — common errors and fixes
+- `assets/architecture.md` — Mermaid architecture diagrams

@@ -471,3 +471,4 @@ See `references/troubleshooting.md` for:
 - [verl recipes](https://github.com/verl-project/verl-recipe)
 - [HybridFlow paper (EuroSys 2025)](https://arxiv.org/abs/2409.19256)
 - `references/troubleshooting.md` — common errors and fixes
+- `assets/architecture.md` — Mermaid architecture diagrams
