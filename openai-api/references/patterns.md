@@ -268,3 +268,60 @@ curl http://localhost:8000/v1/chat/completions \
 curl http://localhost:8000/v1/models \
   -H "Authorization: Bearer token-abc123"
 ```
+
+## Token Counting
+
+```python
+import tiktoken
+
+# Get encoding for a model
+enc = tiktoken.encoding_for_model("gpt-4o")
+
+# Count tokens
+text = "Hello, how are you?"
+tokens = enc.encode(text)
+print(f"{len(tokens)} tokens")
+
+# Chat message token counting (approximate)
+def count_chat_tokens(messages, model="gpt-4o"):
+    enc = tiktoken.encoding_for_model(model)
+    total = 0
+    for msg in messages:
+        total += 4  # overhead per message
+        total += len(enc.encode(msg["content"]))
+        total += len(enc.encode(msg["role"]))
+    total += 2  # reply priming
+    return total
+```
+
+**Context window management:**
+- Track cumulative tokens across multi-turn conversations
+- Truncate oldest messages (keep system prompt) when approaching the limit
+- Use `max_tokens` to reserve space for the response
+
+## Batch API
+
+Process large request batches asynchronously (50% cheaper):
+
+```python
+import json
+
+# 1. Create JSONL file
+requests = [
+    {"custom_id": f"req-{i}", "method": "POST", "url": "/v1/chat/completions",
+     "body": {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": f"Question {i}"}]}}
+    for i in range(1000)
+]
+with open("batch_input.jsonl", "w") as f:
+    for r in requests:
+        f.write(json.dumps(r) + "\n")
+
+# 2. Upload and create batch
+batch_file = client.files.create(file=open("batch_input.jsonl", "rb"), purpose="batch")
+batch = client.batches.create(input_file_id=batch_file.id, endpoint="/v1/chat/completions", completion_window="24h")
+
+# 3. Poll status
+status = client.batches.retrieve(batch.id)
+# When status.status == "completed":
+result_file = client.files.content(status.output_file_id)
+```
