@@ -156,172 +156,28 @@ data: [DONE]
 
 ## Reasoning / Thinking Models
 
-GPT-5, GPT-5-mini, GPT-5-nano, o3, o4-mini, and successors use extended reasoning (chain-of-thought) before responding. The **Responses API** is the recommended interface for reasoning models.
-
-### Responses API (Recommended)
+GPT-5, GPT-5-mini, GPT-5-nano, o3, o4-mini use extended reasoning before responding. Quick start:
 
 ```python
+# Responses API (recommended)
 response = client.responses.create(
     model="gpt-5",
-    reasoning={"effort": "medium"},
-    input=[
-        {"role": "user", "content": "Prove that sqrt(2) is irrational."},
-    ],
+    reasoning={"effort": "medium"},  # none | low | medium | high
+    input=[{"role": "user", "content": "Prove that sqrt(2) is irrational."}],
 )
-print(response.output_text)
 
-# Access reasoning token usage
-print(response.usage.output_tokens_details.reasoning_tokens)
-```
-
-### Chat Completions API (Also Supported)
-
-```python
+# Chat Completions API (also supported)
 response = client.chat.completions.create(
     model="gpt-5",
-    messages=[{"role": "user", "content": "Prove that sqrt(2) is irrational."}],
+    messages=[{"role": "user", "content": "..."}],
     reasoning_effort="medium",
-    max_completion_tokens=25000,       # includes reasoning + visible output
-)
-print(response.choices[0].message.content)
-```
-
-### Reasoning Effort
-
-| Level | Behavior | Use Case |
-|---|---|---|
-| `none` | Skip reasoning entirely (GPT-5.1+) | Fast, no-reasoning tasks |
-| `low` | Minimal reasoning, faster | Simple tasks, classification |
-| `medium` | Balanced (default) | General use |
-| `high` | Extended reasoning, slower | Math proofs, complex code, hard problems |
-
-### Key Differences from Standard Chat Models
-
-- **`developer` role** instead of `system`:
-  ```python
-  # Responses API
-  input=[
-      {"role": "developer", "content": "You are a math tutor."},
-      {"role": "user", "content": "Solve this integral..."},
-  ]
-
-  # Chat Completions API
-  messages=[
-      {"role": "developer", "content": "You are a math tutor."},
-      {"role": "user", "content": "Solve this integral..."},
-  ]
-  ```
-- **`max_output_tokens`** (Responses) or **`max_completion_tokens`** (Chat) — includes both reasoning and visible tokens. Reserve at least 25,000 tokens when experimenting.
-- **Temperature/top_p not supported** — reasoning models control their own sampling
-- **Reasoning tokens are hidden** — they don't appear in output but are billed as output tokens
-
-### Handling Incomplete Responses
-
-If reasoning exhausts `max_output_tokens`, you may get no visible output:
-
-```python
-response = client.responses.create(
-    model="gpt-5",
-    reasoning={"effort": "high"},
-    input=[{"role": "user", "content": prompt}],
-    max_output_tokens=5000,
-)
-
-if response.status == "incomplete" and response.incomplete_details.reason == "max_output_tokens":
-    if response.output_text:
-        print("Partial output:", response.output_text)
-    else:
-        print("Ran out of tokens during reasoning — increase max_output_tokens")
-```
-
-### Reasoning Summaries
-
-Get concise summaries of the model's internal reasoning process:
-
-```python
-response = client.responses.create(
-    model="gpt-5",
-    reasoning={"effort": "high", "summary": "auto"},  # or "concise"
-    input=[{"role": "user", "content": "Design a distributed training pipeline."}],
-)
-
-# Access reasoning summaries in output items
-for item in response.output:
-    if item.type == "reasoning":
-        for summary in item.summary:
-            print(f"Reasoning: {summary.text}")
-```
-
-### Encrypted Reasoning Items (Stateless Mode)
-
-When `store=False` or under zero data retention, pass reasoning items across turns:
-
-```python
-response = client.responses.create(
-    model="gpt-5",
-    reasoning={"effort": "medium"},
-    input=[{"role": "user", "content": "Step 1..."}],
-    include=["reasoning.encrypted_content"],
-    store=False,
-)
-
-# Pass reasoning items back in next turn
-next_response = client.responses.create(
-    model="gpt-5",
-    reasoning={"effort": "medium"},
-    input=[
-        *response.output,  # includes encrypted reasoning items
-        {"role": "user", "content": "Now step 2..."},
-    ],
-    include=["reasoning.encrypted_content"],
-    store=False,
+    max_completion_tokens=25000,
 )
 ```
 
-### Reasoning with Tool Calling
+Key differences: use `developer` role (not `system`), `max_output_tokens`/`max_completion_tokens` includes reasoning tokens, temperature/top_p not supported.
 
-Pass reasoning items back when doing multi-turn function calling:
-
-```python
-response = client.responses.create(
-    model="gpt-5",
-    reasoning={"effort": "medium"},
-    input=[{"role": "user", "content": "What's the weather in SF and NYC?"}],
-    tools=tools,
-)
-
-# Execute tool calls, then pass back ALL output items (including reasoning)
-next_response = client.responses.create(
-    model="gpt-5",
-    input=[
-        {"role": "user", "content": "What's the weather in SF and NYC?"},
-        *response.output,        # reasoning + function_call items
-        {"type": "function_call_output", "call_id": call_id, "output": result},
-    ],
-    tools=tools,
-)
-```
-
-### Model Selection
-
-| Model | Speed | Reasoning | Cost | Best For |
-|---|---|---|---|---|
-| `gpt-5-nano` | Fastest | Basic | Lowest | Simple tasks, high volume |
-| `gpt-5-mini` | Fast | Good | Low | Balanced workloads |
-| `gpt-5` | Medium | Strong | Medium | Complex reasoning, broad domains |
-| `o3` | Slow | Strongest | High | Research, hard math/code |
-| `o4-mini` | Fast | Strong | Low | Efficient reasoning, 128K context |
-
-### Backend Compatibility
-
-| Feature | OpenAI | vLLM | Ollama | LiteLLM |
-|---|---|---|---|---|
-| Responses API | ✅ | ❌ | ❌ | Via proxy |
-| Reasoning models | ✅ (GPT-5, o3, o4-mini) | ❌ | Partial (DeepSeek-R1) | Via proxy |
-| `reasoning.effort` | ✅ | ❌ | ❌ | Via proxy |
-| `developer` role | ✅ | ❌ | ❌ | Via proxy |
-
-**Open-source reasoning:** DeepSeek-R1 and QwQ expose thinking in `<think>` tags within response content. They use standard chat completions (not the Responses API), so they work with any backend. GPT-OSS models from OpenAI also support the `developer` role via their chat template.
+**Full reference**: See [references/reasoning-models.md](references/reasoning-models.md) for Responses API details, reasoning summaries, encrypted reasoning items, stateless multi-turn, tool calling with reasoning, model selection table, and backend compatibility.
 
 ## Tool Calling (Function Calling)
 
@@ -580,36 +436,6 @@ def call_with_retry(fn, max_retries=5):
     raise Exception("Max retries exceeded")
 ```
 
-## Token Counting
-
-```python
-import tiktoken
-
-# Get encoding for a model
-enc = tiktoken.encoding_for_model("gpt-4o")
-
-# Count tokens
-text = "Hello, how are you?"
-tokens = enc.encode(text)
-print(f"{len(tokens)} tokens")
-
-# Chat message token counting (approximate)
-def count_chat_tokens(messages, model="gpt-4o"):
-    enc = tiktoken.encoding_for_model(model)
-    total = 0
-    for msg in messages:
-        total += 4  # overhead per message
-        total += len(enc.encode(msg["content"]))
-        total += len(enc.encode(msg["role"]))
-    total += 2  # reply priming
-    return total
-```
-
-**Context window management:**
-- Track cumulative tokens across multi-turn conversations
-- Truncate oldest messages (keep system prompt) when approaching the limit
-- Use `max_tokens` to reserve space for the response
-
 ## Vision (Image Inputs)
 
 ```python
@@ -630,33 +456,6 @@ response = client.chat.completions.create(
 ```
 
 Also supports base64: `{"url": f"data:image/png;base64,{b64_data}"}`
-
-## Batch API
-
-Process large request batches asynchronously (50% cheaper):
-
-```python
-import json
-
-# 1. Create JSONL file
-requests = [
-    {"custom_id": f"req-{i}", "method": "POST", "url": "/v1/chat/completions",
-     "body": {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": f"Question {i}"}]}}
-    for i in range(1000)
-]
-with open("batch_input.jsonl", "w") as f:
-    for r in requests:
-        f.write(json.dumps(r) + "\n")
-
-# 2. Upload and create batch
-batch_file = client.files.create(file=open("batch_input.jsonl", "rb"), purpose="batch")
-batch = client.batches.create(input_file_id=batch_file.id, endpoint="/v1/chat/completions", completion_window="24h")
-
-# 3. Poll status
-status = client.batches.retrieve(batch.id)
-# When status.status == "completed":
-result_file = client.files.content(status.output_file_id)
-```
 
 ## Audio (Whisper + TTS)
 
@@ -695,5 +494,5 @@ response.stream_to_file("output.mp3")
 - [OpenAI API Reference](https://platform.openai.com/docs/api-reference)
 - [openai-python SDK](https://github.com/openai/openai-python)
 - [tiktoken](https://github.com/openai/tiktoken)
-- `references/patterns.md` — common integration patterns
+- `references/patterns.md` — common integration patterns, token counting, batch API
 - `assets/structured_output.py` — structured output examples with Pydantic, response_format, and Responses API reasoning
