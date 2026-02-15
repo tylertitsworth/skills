@@ -68,9 +68,6 @@ applications:
           kv_transfer_config:
             kv_connector: NixlConnector
             kv_role: kv_both
-        runtime_env:
-          env_vars:
-            VLLM_NIXL_SIDE_CHANNEL_PORT: "5601"
 ```
 
 ## How PD Routing Works
@@ -115,7 +112,7 @@ Both `prefill_config` and `decode_config` are `LLMConfig` objects. Key fields:
 | `engine_kwargs` | dict | All vLLM kwargs (TP, memory, KV transfer config, etc.). TP is auto-managed but can be overridden. |
 | `deployment_config` | dict | Ray Serve deployment options: `autoscaling_config`, `max_ongoing_requests`, `num_replicas`, `health_check_*`, `graceful_shutdown_*` |
 | `placement_group_config` | dict | Custom resource bundles + strategy (`"PACK"` default, `"STRICT_PACK"` for DP). |
-| `runtime_env` | dict | Environment variables (`VLLM_NIXL_SIDE_CHANNEL_PORT`, `UCX_NET_DEVICES`, etc.) and pip packages. |
+| `runtime_env` | dict | Environment variables (`UCX_NET_DEVICES`, etc.) and pip packages. |
 | `lora_config` | dict | LoRA adapter settings (same adapters must be on both prefill and decode). |
 | `experimental_configs` | dict | `stream_batching_interval_ms` (batching window), `num_ingress_replicas`, `dp_size_per_node` (for DP+PD). |
 | `log_engine_metrics` | bool | Enable vLLM Prometheus metrics via Ray (default: `True`). |
@@ -205,6 +202,6 @@ decode_config = LLMConfig(
 - Both configs **must use the same model** and `model_id`
 - `kv_transfer_config` is required in both configs' `engine_kwargs`
 - NixlConnector is the recommended connector for Ray Serve PD
-- `VLLM_NIXL_SIDE_CHANNEL_PORT` must differ between prefill and decode if co-located on the same node (set via `runtime_env.env_vars`)
+- `VLLM_NIXL_SIDE_CHANNEL_PORT` is managed automatically by Ray Serve for multi-node deployments — do not set it manually
 
 See `assets/serve_pd_config.yaml` for a complete deployment template.
