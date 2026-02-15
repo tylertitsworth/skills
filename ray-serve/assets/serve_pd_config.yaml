@@ -34,7 +34,6 @@ applications:
         runtime_env:
           env_vars:
             VLLM_USE_V1: "1"
-            VLLM_NIXL_SIDE_CHANNEL_PORT: "5600"
             UCX_NET_DEVICES: "all"
 
       decode_config:
@@ -59,5 +58,4 @@ applications:
         runtime_env:
           env_vars:
             VLLM_USE_V1: "1"
-            VLLM_NIXL_SIDE_CHANNEL_PORT: "5601"
             UCX_NET_DEVICES: "all"
